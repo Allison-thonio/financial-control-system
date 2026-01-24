@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { LogOut, CheckCircle, Clock, AlertCircle, XCircle } from 'lucide-react';
+import { LogOut, CheckCircle, Clock, AlertCircle, XCircle, Calendar } from 'lucide-react';
 import { useSimpleAuth } from '@/hooks/useSimpleAuth';
 
 export interface LoanApp {
@@ -74,10 +74,10 @@ export function ManagerDashboard() {
         loans.map((loan) =>
           loan.id === selectedLoan.id
             ? {
-                ...loan,
-                status: approvalData.approved ? 'approved' : 'rejected',
-                approvalReason: approvalData.reason || undefined,
-              }
+              ...loan,
+              status: approvalData.approved ? 'approved' : 'rejected',
+              approvalReason: approvalData.reason || undefined,
+            }
             : loan
         )
       );
@@ -116,13 +116,22 @@ export function ManagerDashboard() {
             <h1 className="text-2xl font-bold text-gray-900">Manager Dashboard</h1>
             <p className="text-sm text-gray-600">{user.email}</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
+          <div className="flex gap-4 items-center">
+            <button
+              onClick={() => router.push('/loans')}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold shadow-md"
+            >
+              <Calendar className="w-4 h-4" />
+              Loan Transactions
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 
@@ -179,11 +188,10 @@ export function ManagerDashboard() {
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
-              className={`px-4 py-2 rounded-lg font-medium transition ${
-                filterStatus === status
-                  ? 'bg-green-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
-              }`}
+              className={`px-4 py-2 rounded-lg font-medium transition ${filterStatus === status
+                ? 'bg-green-600 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                }`}
             >
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </button>
@@ -229,13 +237,12 @@ export function ManagerDashboard() {
                     <td className="px-6 py-4 text-sm text-gray-900">{loan.loanTenure} months</td>
                     <td className="px-6 py-4">
                       <span
-                        className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                          loan.status === 'approved'
-                            ? 'bg-green-100 text-green-800'
-                            : loan.status === 'rejected'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                        }`}
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${loan.status === 'approved'
+                          ? 'bg-green-100 text-green-800'
+                          : loan.status === 'rejected'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                          }`}
                       >
                         {loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}
                       </span>
@@ -317,11 +324,10 @@ export function ManagerDashboard() {
               </button>
               <button
                 onClick={submitApproval}
-                className={`flex-1 px-4 py-2 text-white rounded-lg transition ${
-                  approvalData.approved
-                    ? 'bg-green-600 hover:bg-green-700'
-                    : 'bg-red-600 hover:bg-red-700'
-                }`}
+                className={`flex-1 px-4 py-2 text-white rounded-lg transition ${approvalData.approved
+                  ? 'bg-green-600 hover:bg-green-700'
+                  : 'bg-red-600 hover:bg-red-700'
+                  }`}
               >
                 {approvalData.approved ? 'Approve' : 'Reject'}
               </button>

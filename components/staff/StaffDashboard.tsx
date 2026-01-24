@@ -57,26 +57,41 @@ export function StaffDashboard() {
     e.preventDefault();
     const amount = parseFloat(formData.loanAmount);
     const income = parseFloat(formData.monthlyIncome);
-    const tenure = parseInt(formData.loanTenure);
+    const months = 3; // Enforced 3-month cap
+    const interestPerMonth = 0.1; // 10% per month
 
-    if (!amount || !income || !tenure) {
+    if (!amount || !income) {
       alert('Please fill all fields');
       return;
     }
 
-    const emi = calculateEMI(amount, 9, tenure);
+    // AI Check: total repayment (Principal + 30% interest) <= 3 months salary
+    const totalRepayment = amount * 1.3;
+    const maxCapacity = income * 3;
+
+    // Check existing loans for overlapping capacity
+    const currentOutstanding = loans
+      .filter(l => l.status === 'approved' || l.status === 'pending')
+      .reduce((sum, l) => sum + (l.loanAmount * 1.3), 0);
+
+    if (totalRepayment + currentOutstanding > maxCapacity) {
+      alert(`Loan Denied by AI: Your total loan obligation (₦${(totalRepayment + currentOutstanding).toLocaleString()}) would exceed your 3-month salary cap (₦${maxCapacity.toLocaleString()}).`);
+      return;
+    }
+
+    const emi = Math.round(totalRepayment / months);
     const newLoan: LoanApp = {
       id: Date.now().toString(),
       loanAmount: amount,
       monthlyIncome: income,
-      loanTenure: tenure,
+      loanTenure: months,
       monthlyEMI: emi,
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0],
     };
 
     setLoans([newLoan, ...loans]);
-    setFormData({ loanAmount: '', monthlyIncome: '', loanTenure: '' });
+    setFormData({ loanAmount: '', monthlyIncome: '', loanTenure: '3' });
     setShowForm(false);
   };
 
@@ -125,10 +140,18 @@ export function StaffDashboard() {
         <div className="mb-8">
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition font-bold shadow-lg"
           >
             <Plus className="w-4 h-4" />
             New Loan Application
+          </button>
+
+          <button
+            onClick={() => router.push('/loans')}
+            className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition font-bold shadow-md"
+          >
+            <Calendar className="w-4 h-4" />
+            View Loan Transactions Table
           </button>
         </div>
 
@@ -168,17 +191,11 @@ export function StaffDashboard() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tenure (months)
+                    Tenure (Months)
                   </label>
-                  <input
-                    type="number"
-                    value={formData.loanTenure}
-                    onChange={(e) =>
-                      setFormData({ ...formData, loanTenure: e.target.value })
-                    }
-                    placeholder="12"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                  />
+                  <div className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-500 font-bold">
+                    3 Months (Fixed Cap)
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -219,13 +236,12 @@ export function StaffDashboard() {
                     <p className="text-sm text-gray-600">{loan.createdAt}</p>
                   </div>
                   <div
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      loan.status === 'approved'
-                        ? 'bg-green-100 text-green-800'
-                        : loan.status === 'rejected'
-                          ? 'bg-red-100 text-red-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                    }`}
+                    className={`px-3 py-1 rounded-full text-sm font-medium ${loan.status === 'approved'
+                      ? 'bg-green-100 text-green-800'
+                      : loan.status === 'rejected'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                      }`}
                   >
                     {loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}
                   </div>
