@@ -4,7 +4,7 @@ import React from "react"
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { LogOut, Plus, FileText, DollarSign, Calendar, AlertCircle } from 'lucide-react';
+import { Plus, FileText, AlertCircle } from 'lucide-react';
 import { useSimpleAuth } from '@/hooks/useSimpleAuth';
 
 export interface LoanApp {
@@ -116,42 +116,22 @@ export function StaffDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Staff Dashboard</h1>
-            <p className="text-sm text-gray-600">{user.email}</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
-        </div>
-      </header>
+    <div className="space-y-8 p-4 md:p-8">
+      <div>
+        <h1 className="text-3xl font-black text-gray-900 tracking-tight">Staff <span className="text-primary">Dashboard</span></h1>
+        <p className="text-sm text-gray-500 font-medium">Manage your loan applications and view approval status</p>
+      </div>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto">
         {/* Action Button */}
-        <div className="mb-8">
+        <div className="mb-8 flex gap-4">
           <button
             onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition font-bold shadow-lg"
           >
             <Plus className="w-4 h-4" />
             New Loan Application
-          </button>
-
-          <button
-            onClick={() => router.push('/loans')}
-            className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition font-bold shadow-md"
-          >
-            <Calendar className="w-4 h-4" />
-            View Loan Transactions Table
           </button>
         </div>
 
@@ -280,7 +260,7 @@ export function StaffDashboard() {
             ))
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

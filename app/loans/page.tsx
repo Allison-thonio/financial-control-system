@@ -1,12 +1,10 @@
-'use client';
-
 import { LoanTransactions } from '@/components/LoanTransactions';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
 export default function LoansPage() {
     return (
-        <ProtectedRoute>
+        <DashboardLayout>
             <LoanTransactions />
-        </ProtectedRoute>
+        </DashboardLayout>
     );
 }

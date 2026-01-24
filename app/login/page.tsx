@@ -4,6 +4,7 @@ import React from "react"
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { validateDemoCredentials } from '@/lib/demoAuth';
 
 const DEMO_CREDENTIALS = {
   staff: {
@@ -28,48 +29,27 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
 
-    console.log('[v0] Login attempt:', { email, password });
-
     try {
-      // Validate credentials
-      let role: 'staff' | 'manager' | null = null;
+      // Demo authentication logic
+      const { valid, role } = validateDemoCredentials(email, password);
 
-      if (
-        email === DEMO_CREDENTIALS.staff.email &&
-        password === DEMO_CREDENTIALS.staff.password
-      ) {
-        role = 'staff';
-      } else if (
-        email === DEMO_CREDENTIALS.manager.email &&
-        password === DEMO_CREDENTIALS.manager.password
-      ) {
-        role = 'manager';
+      if (valid && role) {
+        // Store auth using both keys for maximum compatibility
+        const authData = { email, role, timestamp: Date.now() };
+        sessionStorage.setItem('loanAppAuth', JSON.stringify(authData));
+        sessionStorage.setItem('demoAuth', JSON.stringify(authData));
+
+        // Short delay for better UX
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const redirectUrl = role === 'manager' ? '/manager' : '/staff';
+        router.push(redirectUrl);
       } else {
         setError('Invalid email or password');
         setLoading(false);
-        return;
       }
-
-      // Store auth in session storage
-      const authData = {
-        email,
-        role,
-        timestamp: Date.now(),
-      };
-      sessionStorage.setItem('loanAppAuth', JSON.stringify(authData));
-      console.log('[v0] Auth stored, role:', role);
-
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Redirect
-      const redirectUrl = role === 'manager' ? '/manager' : '/staff';
-      console.log('[v0] Redirecting to:', redirectUrl);
-      router.push(redirectUrl);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Login failed';
-      console.error('[v0] Login error:', message);
-      setError(message);
+      setError('An unexpected error occurred');
       setLoading(false);
     }
   };
@@ -91,6 +71,22 @@ export default function LoginPage() {
         {/* Auth Card */}
         <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
           <form onSubmit={handleLogin} className="space-y-4">
+            <div className="flex gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => { setEmail('allisonfezyy@gmail.com'); setPassword('ggs'); }}
+                className="flex-1 text-[10px] py-1 bg-blue-50 text-blue-600 rounded border border-blue-100 hover:bg-blue-100 font-bold"
+              >
+                Manager Auto-fill
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmail('thinkerricker@gmail.com'); setPassword('ggsnigga'); }}
+                className="flex-1 text-[10px] py-1 bg-green-50 text-green-600 rounded border border-green-100 hover:bg-green-100 font-bold"
+              >
+                Staff Auto-fill
+              </button>
+            </div>
             {/* Email Field */}
             <div>
               <label className="block text-sm font-semibold text-gray-800 mb-2">

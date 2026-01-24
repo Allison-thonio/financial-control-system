@@ -72,12 +72,12 @@ export function LoanTransactions() {
     };
 
     return (
-        <div className="p-4 md:p-8 bg-white min-h-screen">
+        <div className="w-full">
             <div className="max-w-7xl mx-auto">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
                     <div>
                         <h1 className="text-4xl font-black text-gray-900 tracking-tight mb-2">
-                            Loan <span className="text-blue-600">Transactions</span>
+                            Loan <span className="text-blue-600">History</span>
                         </h1>
                         <p className="text-gray-500 font-medium">Financial Control Center & Automated Collections</p>
                     </div>
@@ -151,8 +151,8 @@ export function LoanTransactions() {
                                             })}
                                             <td className="px-6 py-5 text-center">
                                                 <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border-2 ${row.status === 'active'
-                                                        ? 'bg-blue-50 text-blue-600 border-blue-100'
-                                                        : 'bg-green-50 text-green-600 border-green-100'
+                                                    ? 'bg-blue-50 text-blue-600 border-blue-100'
+                                                    : 'bg-green-50 text-green-600 border-green-100'
                                                     }`}>
                                                     {row.status}
                                                 </span>

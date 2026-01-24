@@ -1,7 +1,10 @@
-'use client';
-
 import { StaffDashboard } from '@/components/staff/StaffDashboard';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
 export default function StaffPage() {
-  return <StaffDashboard />;
+  return (
+    <DashboardLayout>
+      <StaffDashboard />
+    </DashboardLayout>
+  );
 }

@@ -1,7 +1,10 @@
-'use client';
-
 import { ManagerDashboard } from '@/components/manager/ManagerDashboard';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
 
 export default function ManagerPage() {
-  return <ManagerDashboard />;
+  return (
+    <DashboardLayout>
+      <ManagerDashboard />
+    </DashboardLayout>
+  );
 }
