@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { auth, db } from '@/lib/firebase';
 import { User as FirebaseUser, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -16,6 +16,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refreshAuth: () => void;
   isDemoMode: boolean;
 }
 
@@ -26,13 +27,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isDemoMode, setIsDemoMode] = useState(false);
 
+  const checkDemoAuth = useCallback(() => {
+    const authStr = typeof window !== 'undefined' ? (sessionStorage.getItem('demoAuth') || sessionStorage.getItem('loanAppAuth')) : null;
+    console.log('[v0] Checking demo auth in sessionStorage:', authStr ? 'Found' : 'Not found');
+    if (authStr) {
+      try {
+        const authData = JSON.parse(authStr);
+        if (authData && authData.role) {
+          const newUser = {
+            uid: `demo-${authData.role}`,
+            email: authData.email,
+            role: authData.role,
+            demoMode: true,
+          } as any;
+          setUser(newUser);
+          return true;
+        }
+      } catch (err) {
+        console.error('[v0] Failed to parse demo auth:', err);
+      }
+    }
+    return false;
+  }, []);
+
+  const refreshAuth = useCallback(() => {
+    console.log('[v0] refreshAuth called');
+    checkDemoAuth();
+  }, [checkDemoAuth]);
+
   useEffect(() => {
     // Check if auth is properly initialized (null auth means demo mode)
     console.log('[v0] AuthProvider initializing - auth:', auth, 'db:', db);
-    
+
     if (!auth || typeof auth !== 'object' || !('app' in auth)) {
       console.log('[v0] Demo mode activated - auth not available');
       setIsDemoMode(true);
+      checkDemoAuth();
       setLoading(false);
       return;
     }
@@ -55,7 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(firebaseUser as User);
           }
         } else {
-          setUser(null);
+          // If no Firebase user, check for demo session as fallback
+          checkDemoAuth();
         }
         setLoading(false);
       });
@@ -64,17 +95,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('[v0] Firebase not properly initialized:', error);
       setIsDemoMode(true);
+      checkDemoAuth();
       setLoading(false);
     }
-  }, []);
+  }, [checkDemoAuth]);
 
   const logout = async () => {
     try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('demoAuth');
+        sessionStorage.removeItem('loanAppAuth');
+      }
+
       if (isDemoMode) {
         setUser(null);
         return;
       }
-      await signOut(auth);
+      if (auth) {
+        await signOut(auth);
+      }
       setUser(null);
     } catch (error) {
       console.error('[Auth] Error logging out:', error);
@@ -83,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout, isDemoMode }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshAuth, isDemoMode }}>
       {children}
     </AuthContext.Provider>
   );

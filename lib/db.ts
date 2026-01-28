@@ -47,6 +47,7 @@ export interface UserProfile {
 
 // User operations
 export async function createUserProfile(userData: Omit<UserProfile, 'id' | 'createdAt'>) {
+  if (!db) throw new Error('Firebase not initialized');
   try {
     const userRef = collection(db, 'users');
     const docRef = await addDoc(userRef, {
@@ -61,6 +62,7 @@ export async function createUserProfile(userData: Omit<UserProfile, 'id' | 'crea
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
+  if (!db) return null;
   try {
     const userRef = collection(db, 'users');
     const q = query(userRef, where('userId', '==', userId));
@@ -75,8 +77,9 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 
 // Loan operations
 export async function createLoanApplication(
-  loanData: Omit<LoanApplication, 'id' | 'createdAt' | 'updatedAt'>
+  loanData: Omit<LoanApplication, 'id' | 'createdAt' | 'updatedAt' | 'monthlyEMI'>
 ) {
+  if (!db) throw new Error('Firebase not initialized');
   try {
     const loansRef = collection(db, 'loans');
     const monthlyRate = loanData.interestRate / 100 / 12;
@@ -96,6 +99,7 @@ export async function createLoanApplication(
 }
 
 export async function getLoansByUserId(userId: string): Promise<LoanApplication[]> {
+  if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
     const q = query(loansRef, where('userId', '==', userId), orderBy('createdAt', 'desc'));
@@ -111,6 +115,7 @@ export async function getLoansByUserId(userId: string): Promise<LoanApplication[
 }
 
 export async function getAllLoans(): Promise<LoanApplication[]> {
+  if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
     const q = query(loansRef, orderBy('createdAt', 'desc'));
@@ -126,6 +131,7 @@ export async function getAllLoans(): Promise<LoanApplication[]> {
 }
 
 export async function getLoanById(loanId: string): Promise<LoanApplication | null> {
+  if (!db) return null;
   try {
     const loanDoc = await getDoc(doc(db, 'loans', loanId));
     if (!loanDoc.exists()) return null;
@@ -145,6 +151,7 @@ export async function updateLoanStatus(
   approvedBy?: string,
   rejectionReason?: string
 ) {
+  if (!db) throw new Error('Firebase not initialized');
   try {
     const loanRef = doc(db, 'loans', loanId);
     const updateData: any = {

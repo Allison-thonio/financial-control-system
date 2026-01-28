@@ -14,39 +14,19 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
-  const { user, loading, isDemoMode } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [demoUser, setDemoUser] = useState<any>(null);
 
   useEffect(() => {
-    // In demo mode, check for stored auth in session
-    if (isDemoMode && loading === false) {
-      const storedAuth = getDemoAuth();
-      
-      if (storedAuth && storedAuth.role) {
-        // User is authenticated in demo mode, create mock user object
-        setDemoUser({
-          uid: `demo-${storedAuth.role}`,
-          email: storedAuth.email,
-          role: storedAuth.role,
-          demoMode: true,
-        });
-      } else if (!pathname.includes('/login')) {
-        // Not authenticated and not on login page, redirect to login
+    if (!loading) {
+      if (!user && !pathname.includes('/login')) {
         router.push('/login');
+      } else if (user && requiredRole && user.role !== requiredRole && user.role !== 'admin') {
+        router.push(user.role === 'manager' ? '/manager' : '/staff');
       }
     }
-  }, [isDemoMode, loading, pathname, router]);
-
-  useEffect(() => {
-    const currentUser = user || demoUser;
-    if (!loading && !currentUser && !pathname.includes('/login')) {
-      router.push('/login');
-    } else if (!loading && currentUser && requiredRole && currentUser.role !== requiredRole && currentUser.role !== 'admin') {
-      router.push(currentUser.role === 'manager' ? '/manager' : '/staff');
-    }
-  }, [user, demoUser, loading, router, requiredRole, pathname]);
+  }, [user, loading, router, requiredRole, pathname]);
 
   if (loading) {
     return (
@@ -56,8 +36,7 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     );
   }
 
-  const currentUser = user || demoUser;
-  if (!currentUser) {
+  if (!user && !pathname.includes('/login')) {
     return null;
   }
 

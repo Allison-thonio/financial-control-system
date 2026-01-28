@@ -2,9 +2,10 @@
 
 import React from "react"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { validateDemoCredentials } from '@/lib/demoAuth';
+import { useAuth } from '@/contexts/AuthContext';
 
 const DEMO_CREDENTIALS = {
   staff: {
@@ -22,7 +23,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState('ggsnigga');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { user, loading: authLoading, refreshAuth } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      const redirectUrl = user.role === 'manager' ? '/manager' : '/staff';
+      router.push(redirectUrl);
+    }
+  }, [user, authLoading, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +48,11 @@ export default function LoginPage() {
         sessionStorage.setItem('loanAppAuth', JSON.stringify(authData));
         sessionStorage.setItem('demoAuth', JSON.stringify(authData));
 
-        // Short delay for better UX
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        // Refresh AuthContext state immediately
+        refreshAuth();
+
+        // Short delay for better UX and state propagation
+        await new Promise((resolve) => setTimeout(resolve, 300));
 
         const redirectUrl = role === 'manager' ? '/manager' : '/staff';
         router.push(redirectUrl);
