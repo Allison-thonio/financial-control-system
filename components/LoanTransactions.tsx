@@ -20,6 +20,7 @@ import {
     History as HistoryIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSystem } from '@/contexts/SystemContext';
 
 interface TransactionRow {
     id: string;
@@ -42,6 +43,7 @@ const MONTHS = [
 ];
 
 export function LoanTransactions() {
+    const { settings } = useSystem();
     const [transactions] = useState<TransactionRow[]>([
         {
             id: '1',
@@ -100,7 +102,7 @@ export function LoanTransactions() {
         const start = new Date(row.startDate);
         const currentYear = new Date().getFullYear();
 
-        const schedule = getDetailedRepaymentSchedule(row.loanAmount, row.loanTenure, start);
+        const schedule = getDetailedRepaymentSchedule(row.loanAmount, row.loanTenure, start, settings);
 
         const scheduledPayment = schedule.find(p => p.month === monthIndex && p.year === currentYear);
 
@@ -159,8 +161,8 @@ export function LoanTransactions() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredTransactions.map((row) => {
-                                const { total } = calculateTotalRepayment(row.loanAmount, row.loanTenure);
-                                const isOverLimit = total > row.monthlyIncome * 3;
+                                const { total } = calculateTotalRepayment(row.loanAmount, row.loanTenure, settings);
+                                const isOverLimit = total > row.monthlyIncome * settings.salaryCapMultiplier;
 
                                 return (
                                     <tr key={row.id} className="hover:bg-primary/[0.02] transition-colors group">
@@ -263,7 +265,7 @@ export function LoanTransactions() {
                         </div>
                         <h3 className="text-3xl font-black mb-4 tracking-tight">System Integrity</h3>
                         <p className="text-white/80 font-medium leading-relaxed">
-                            Every transaction in this ledger is encrypted and verified against bank-grade security protocols. 10% monthly interest is accurately computed for each staff request.
+                            Every transaction in this ledger is encrypted and verified against bank-grade security protocols. {settings.interestRate * 100}% monthly interest is accurately computed for each staff request.
                         </p>
                     </div>
 
@@ -323,7 +325,7 @@ export function LoanTransactions() {
                                     <div className="space-y-6">
                                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Repayment Roadmap</h3>
                                         <div className="space-y-3">
-                                            {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, new Date(selectedLoan.startDate)).map((step, i) => (
+                                            {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, new Date(selectedLoan.startDate), settings).map((step, i) => (
                                                 <div key={i} className="flex items-center justify-between p-4 bg-primary/[0.03] rounded-2xl border border-primary/5">
                                                     <div>
                                                         <p className="text-[9px] font-black uppercase text-primary mb-0.5">M{i + 1} • {MONTHS[step.month]}</p>

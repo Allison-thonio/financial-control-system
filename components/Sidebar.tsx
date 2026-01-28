@@ -8,10 +8,10 @@ import {
     History,
     FileText,
     LogOut,
-    ChevronRight,
-    Search,
+    Settings,
     User,
-    Command
+    Command,
+    Banknote
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -44,6 +44,18 @@ export function Sidebar({ role, forceExpand = false }: SidebarProps) {
             href: '/loans',
             icon: History,
         },
+        ...(role === 'manager' ? [
+            {
+                label: 'Payroll Sim',
+                href: '/manager/payroll',
+                icon: Banknote,
+            },
+            {
+                label: 'Settings',
+                href: '/manager/settings',
+                icon: Settings,
+            }
+        ] : []),
     ];
 
     const handleLogout = async () => {

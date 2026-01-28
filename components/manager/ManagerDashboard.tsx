@@ -94,6 +94,31 @@ export function ManagerDashboard() {
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [approvalData, setApprovalData] = useState({ approved: false, reason: '' });
+  const [previewDoc, setPreviewDoc] = useState<{ url: string, type: string } | null>(null);
+
+  const handleExportCSV = (loan: LoanApp) => {
+    const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, new Date(loan.createdAt), settings);
+    const headers = ['Month', 'Date', 'Principal', 'Interest', 'Total', 'Balance'];
+    const rows = schedule.map(s => [
+      s.month + 1,
+      new Date(s.year, s.month).toLocaleDateString(),
+      s.principal,
+      s.interest,
+      s.total,
+      s.remainingBalance
+    ]);
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `repayment-schedule-${loan.id.slice(-6)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -400,8 +425,8 @@ export function ManagerDashboard() {
                   <div className="space-y-6">
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                       <p className="text-[10px] text-primary font-black uppercase mb-2">Total Repayment</p>
-                      <p className="text-3xl font-black text-gray-900">₦{calculateTotalRepayment(selectedLoan.loanAmount, selectedLoan.loanTenure).total.toLocaleString()}</p>
-                      <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Incl. 10% monthly interest</p>
+                      <p className="text-3xl font-black text-gray-900">₦{calculateTotalRepayment(selectedLoan.loanAmount, selectedLoan.loanTenure, settings).total.toLocaleString()}</p>
+                      <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Incl. {settings.interestRate * 100}% monthly interest</p>
                     </div>
                     <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Applicant Details</h4>
@@ -423,6 +448,16 @@ export function ManagerDashboard() {
                       Monthly Repayment Spreadsheet
                     </h4>
                     <div className="bg-gray-50/50 rounded-[2rem] border border-gray-100 overflow-hidden">
+                      <div className="p-4 bg-white/50 border-b border-gray-100 flex justify-between items-center px-6">
+                        <h5 className="text-[10px] font-black uppercase text-gray-400">Projection Ledger</h5>
+                        <button
+                          onClick={() => handleExportCSV(selectedLoan)}
+                          className="flex items-center gap-2 text-[10px] font-black text-primary hover:text-primary/70 transition-colors bg-white px-3 py-1.5 rounded-lg border border-primary/10 shadow-sm"
+                        >
+                          <Download className="w-3 h-3" />
+                          Export CSV
+                        </button>
+                      </div>
                       <table className="w-full text-left text-xs">
                         <thead className="bg-white/50">
                           <tr>
@@ -469,7 +504,12 @@ export function ManagerDashboard() {
                         <div className="p-3 bg-emerald-100 rounded-2xl text-emerald-600"><UserCheck className="w-5 h-5" /></div>
                         <div><p className="text-[10px] font-black">Passport Photo</p><p className="text-[8px] text-gray-400">Employee-Identity.jpg</p></div>
                       </div>
-                      <button className="p-2 border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"><Eye className="w-4 h-4" /></button>
+                      <button
+                        onClick={() => setPreviewDoc({ url: '/passport-placeholder.jpg', type: 'image' })}
+                        className="p-2 border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
                     </div>
 
                     <div className="p-5 bg-gray-900 rounded-3xl flex items-center justify-between text-white lg:col-span-1 border border-gray-800 shadow-xl overflow-hidden relative">
@@ -540,6 +580,48 @@ export function ManagerDashboard() {
                 <button onClick={() => setShowApprovalModal(false)} className="px-6 py-4 bg-gray-100 text-gray-400 rounded-2xl font-black transition-colors">
                   Cancel
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Document Lightbox */}
+      <AnimatePresence>
+        {previewDoc && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-10">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPreviewDoc(null)}
+              className="absolute inset-0 bg-black/90 backdrop-blur-xl"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl w-full bg-white rounded-[3rem] overflow-hidden shadow-2xl"
+            >
+              <div className="p-10 flex flex-col items-center">
+                <div className="w-full flex justify-between items-center mb-6">
+                  <h4 className="text-xl font-black uppercase tracking-widest text-gray-900 italic">Document <span className="text-primary">Preview</span></h4>
+                  <button onClick={() => setPreviewDoc(null)} className="p-3 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-all font-black">CLOSE</button>
+                </div>
+                <div className="w-full h-[500px] bg-gray-50 rounded-[2rem] border-4 border-dashed border-gray-100 flex items-center justify-center overflow-hidden">
+                  {/* In a real app we'd use the actual URL. Here we simulate an image preview */}
+                  <div className="text-center space-y-4">
+                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
+                      <FileText className="w-10 h-10 text-primary" />
+                    </div>
+                    <p className="text-gray-400 font-bold text-sm">Document preview for demonstration purposes.<br />Actual file: {previewDoc.url}</p>
+                  </div>
+                </div>
+                <div className="mt-8 flex gap-4 w-full">
+                  <button className="flex-1 py-4 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                    <Download className="w-4 h-4" /> Download Official Copy
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
