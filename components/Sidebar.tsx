@@ -64,7 +64,12 @@ export function Sidebar({ role, forceExpand = false }: SidebarProps) {
             router.push('/login');
         } catch (error) {
             console.error('Logout failed:', error);
-            sessionStorage.removeItem('loanAppAuth');
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('loanAppAuth');
+                localStorage.removeItem('demoAuth');
+                sessionStorage.removeItem('loanAppAuth');
+                sessionStorage.removeItem('demoAuth');
+            }
             window.location.href = '/login';
         }
     };

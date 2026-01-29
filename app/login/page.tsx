@@ -43,8 +43,10 @@ export default function LoginPage() {
       const { valid, role } = validateDemoCredentials(email, password);
 
       if (valid && role) {
-        // Store auth using both keys for maximum compatibility
+        // Store auth using both keys and both storage types for maximum compatibility and persistence
         const authData = { email, role, timestamp: Date.now() };
+        localStorage.setItem('loanAppAuth', JSON.stringify(authData));
+        localStorage.setItem('demoAuth', JSON.stringify(authData));
         sessionStorage.setItem('loanAppAuth', JSON.stringify(authData));
         sessionStorage.setItem('demoAuth', JSON.stringify(authData));
 

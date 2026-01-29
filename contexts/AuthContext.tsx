@@ -28,8 +28,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isDemoMode, setIsDemoMode] = useState(false);
 
   const checkDemoAuth = useCallback(() => {
-    const authStr = typeof window !== 'undefined' ? (sessionStorage.getItem('demoAuth') || sessionStorage.getItem('loanAppAuth')) : null;
-    console.log('[v0] Checking demo auth in sessionStorage:', authStr ? 'Found' : 'Not found');
+    if (typeof window === 'undefined') return false;
+
+    const authStr = localStorage.getItem('demoAuth') || localStorage.getItem('loanAppAuth') ||
+      sessionStorage.getItem('demoAuth') || sessionStorage.getItem('loanAppAuth');
+
+    console.log('[Auth] Checking for session:', authStr ? 'Found' : 'Not found');
+
     if (authStr) {
       try {
         const authData = JSON.parse(authStr);
@@ -41,18 +46,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             demoMode: true,
           } as any;
           setUser(newUser);
+          setLoading(false); // Ensure loading is false when user is set
           return true;
         }
       } catch (err) {
-        console.error('[v0] Failed to parse demo auth:', err);
+        console.error('[Auth] Failed to parse session:', err);
       }
     }
     return false;
   }, []);
 
   const refreshAuth = useCallback(() => {
-    console.log('[v0] refreshAuth called');
-    checkDemoAuth();
+    console.log('[Auth] refreshAuth called');
+    if (!checkDemoAuth()) {
+      setLoading(false); // If no demo auth found, still stop loading
+    }
   }, [checkDemoAuth]);
 
   useEffect(() => {
@@ -68,7 +76,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      console.log('[v0] Setting up onAuthStateChanged listener');
+      console.log('[Auth] Setting up onAuthStateChanged listener');
+
+      // Immediate check for existing demo session to avoid "loading" flash
+      if (checkDemoAuth()) {
+        console.log('[Auth] Found existing demo session, prioritizing over Firebase listener');
+        setLoading(false);
+      }
+
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         console.log('[v0] onAuthStateChanged triggered:', firebaseUser?.email);
         if (firebaseUser) {
@@ -103,6 +118,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       if (typeof window !== 'undefined') {
+        localStorage.removeItem('demoAuth');
+        localStorage.removeItem('loanAppAuth');
         sessionStorage.removeItem('demoAuth');
         sessionStorage.removeItem('loanAppAuth');
       }
