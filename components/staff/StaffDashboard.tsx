@@ -136,7 +136,7 @@ export function StaffDashboard() {
     }
 
     if (!isReturning && !formData.appointmentLetter) {
-      alert('New clients must upload an Appointment Letter');
+      alert('New clients must upload an Appointment Letter to verify government employment status');
       return;
     }
 
@@ -400,20 +400,20 @@ export function StaffDashboard() {
                       <div className="grid grid-cols-2 gap-4">
                         <label className="group relative cursor-pointer">
                           <input type="file" onChange={(e) => setFormData({ ...formData, appointmentLetter: e.target.files?.[0] || null })} className="hidden" accept=".pdf,.doc,.docx,image/*" />
-                          <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.appointmentLetter || (isReturning && formData.borrowerName) ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
-                            {formData.appointmentLetter || (isReturning && formData.borrowerName) ? <Paperclip className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
+                          <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.appointmentLetter || isReturning ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
+                            {formData.appointmentLetter || isReturning ? <ShieldCheck className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
                             <span className="text-[10px] font-black uppercase text-center px-4 leading-tight">
-                              {formData.appointmentLetter?.name || (isReturning && formData.borrowerName ? 'Using archived letter' : 'Appointment Letter')}
+                              {isReturning ? 'Employment Verified (Archived)' : (formData.appointmentLetter?.name || 'Appointment Letter')}
                             </span>
                           </div>
                         </label>
 
                         <label className="group relative cursor-pointer">
                           <input type="file" onChange={(e) => setFormData({ ...formData, passportPhoto: e.target.files?.[0] || null })} className="hidden" accept="image/*" />
-                          <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.passportPhoto || (isReturning && formData.borrowerName) ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
-                            {formData.passportPhoto || (isReturning && formData.borrowerName) ? <UserCheck className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
+                          <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.passportPhoto ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
+                            {formData.passportPhoto ? <UserCheck className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
                             <span className="text-[10px] font-black uppercase text-center px-4 leading-tight">
-                              {formData.passportPhoto?.name || (isReturning && formData.borrowerName ? 'Using archived photo' : 'Passport Photo')}
+                              {formData.passportPhoto ? formData.passportPhoto.name : (isReturning ? 'Upload Passport for Sync' : 'Passport Photo')}
                             </span>
                           </div>
                         </label>

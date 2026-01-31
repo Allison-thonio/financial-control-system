@@ -47,11 +47,6 @@ export function Sidebar({ role, forceExpand = false }: SidebarProps) {
         },
         ...(role === 'manager' ? [
             {
-                label: 'Payroll Sim',
-                href: '/manager/payroll',
-                icon: Banknote,
-            },
-            {
                 label: 'Disbursement',
                 href: '/manager/disbursement',
                 icon: CreditCard,

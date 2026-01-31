@@ -1,19 +1,20 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { getSystemSettings, updateSystemSettings, createAuditLog, getAuditLogs } from '@/lib/db';
 
 export interface AuditLog {
     id: string;
     action: string;
     user: string;
     details: string;
-    timestamp: string;
+    timestamp: any;
 }
 
 export interface SystemSettings {
-    interestRate: number; // e.g., 0.1 for 10%
-    maxTenure: number;    // e.g., 24
-    salaryCapMultiplier: number; // e.g., 3
+    interestRate: number;
+    maxTenure: number;
+    salaryCapMultiplier: number;
 }
 
 interface SystemContextType {
@@ -35,34 +36,66 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
     useEffect(() => {
-        const savedSettings = localStorage.getItem('loanSystemSettings');
-        if (savedSettings) {
-            setSettings(JSON.parse(savedSettings));
-        }
+        const fetchInitialData = async () => {
+            const [dbSettings, dbLogs] = await Promise.all([
+                getSystemSettings(),
+                getAuditLogs(100)
+            ]);
 
-        const savedLogs = localStorage.getItem('loanAuditLogs');
-        if (savedLogs) {
-            setAuditLogs(JSON.parse(savedLogs));
-        }
+            if (dbSettings) {
+                setSettings({
+                    interestRate: dbSettings.interestRate,
+                    maxTenure: dbSettings.maxTenure,
+                    salaryCapMultiplier: dbSettings.salaryCapMultiplier
+                });
+            } else {
+                // Initialize settings if they don't exist
+                await updateSystemSettings({
+                    interestRate: 0.1,
+                    maxTenure: 12,
+                    salaryCapMultiplier: 3
+                });
+            }
+
+            if (dbLogs) {
+                setAuditLogs(dbLogs.map(log => ({
+                    id: log.id!,
+                    action: log.action,
+                    user: log.user,
+                    details: log.details,
+                    timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : (typeof log.timestamp?.toDate === 'function' ? log.timestamp.toDate().toISOString() : log.timestamp)
+                })));
+            }
+        };
+
+        fetchInitialData();
     }, []);
 
-    const updateSettings = (newSettings: SystemSettings) => {
+    const updateSettings = async (newSettings: SystemSettings) => {
         setSettings(newSettings);
-        localStorage.setItem('loanSystemSettings', JSON.stringify(newSettings));
-        addAuditLog('Updated System Settings', 'Manager', `Interest: ${newSettings.interestRate * 100}%, Max Tenure: ${newSettings.maxTenure}mo`);
+        try {
+            await updateSystemSettings(newSettings);
+            await addAuditLog('Updated System Settings', 'Manager', `Interest: ${newSettings.interestRate * 100}%, Max Tenure: ${newSettings.maxTenure}mo`);
+        } catch (error) {
+            console.error('Failed to update settings:', error);
+        }
     };
 
-    const addAuditLog = (action: string, user: string, details: string) => {
-        const newLog: AuditLog = {
-            id: Math.random().toString(36).substr(2, 9),
-            action,
-            user,
-            details,
-            timestamp: new Date().toISOString(),
-        };
-        const updatedLogs = [newLog, ...auditLogs].slice(0, 100); // Keep last 100 logs
-        setAuditLogs(updatedLogs);
-        localStorage.setItem('loanAuditLogs', JSON.stringify(updatedLogs));
+    const addAuditLog = async (action: string, user: string, details: string) => {
+        try {
+            await createAuditLog({ action, user, details });
+            // Re-fetch logs to keep UI updated
+            const dbLogs = await getAuditLogs(100);
+            setAuditLogs(dbLogs.map(log => ({
+                id: log.id!,
+                action: log.action,
+                user: log.user,
+                details: log.details,
+                timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : (typeof log.timestamp?.toDate === 'function' ? log.timestamp.toDate().toISOString() : log.timestamp)
+            })));
+        } catch (error) {
+            console.error('Failed to add audit log:', error);
+        }
     };
 
     return (

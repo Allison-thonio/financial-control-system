@@ -12,10 +12,12 @@ import {
     Wallet,
     AlertCircle,
     UserCheck,
-    CreditCard
+    CreditCard,
+    TrendingUp,
+    History as HistoryIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LoanApp, getAllLoans, updateLoanStatus } from '@/lib/db';
+import { LoanApp, getAllLoans, updateLoanStatus, MonthlyBudget, setMonthlyBudget, getMonthlyBudget, getAllMonthlyBudgets, calculateMonthlyActualDisbursement } from '@/lib/db';
 import { useSystem } from '@/contexts/SystemContext';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -26,6 +28,15 @@ export function ManagerDisbursement() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [processingId, setProcessingId] = useState<string | null>(null);
+    const [monthlyBudget, setMonthlyBudgetState] = useState<MonthlyBudget | null>(null);
+    const [allBudgets, setAllBudgets] = useState<MonthlyBudget[]>([]);
+    const [showBudgetModal, setShowBudgetModal] = useState(false);
+    const [showPastDisbursements, setShowPastDisbursements] = useState(false);
+    const [targetAmountInput, setTargetAmountInput] = useState('');
+    const [isSavingBudget, setIsSavingBudget] = useState(false);
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
 
     useEffect(() => {
         fetchLoans();
@@ -34,12 +45,45 @@ export function ManagerDisbursement() {
     const fetchLoans = async () => {
         setIsLoading(true);
         try {
-            const allLoans = await getAllLoans();
+            const [allLoans, budget, pastBudgets] = await Promise.all([
+                getAllLoans(),
+                getMonthlyBudget(currentMonth, currentYear),
+                getAllMonthlyBudgets()
+            ]);
+
             setLoans(allLoans);
+            setMonthlyBudgetState(budget);
+            setAllBudgets(pastBudgets);
+
+            if (budget) {
+                setTargetAmountInput(budget.expectedAmount.toString());
+            }
+
+            // Sync actual amount
+            await calculateMonthlyActualDisbursement(currentMonth, currentYear);
+            const updatedBudget = await getMonthlyBudget(currentMonth, currentYear);
+            setMonthlyBudgetState(updatedBudget);
+
         } catch (error) {
-            console.error('Failed to fetch loans:', error);
+            console.error('Failed to fetch data:', error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleSaveBudget = async () => {
+        setIsSavingBudget(true);
+        try {
+            const amount = parseFloat(targetAmountInput);
+            if (isNaN(amount)) throw new Error('Invalid amount');
+
+            await setMonthlyBudget(currentMonth, currentYear, amount);
+            await fetchLoans();
+            setShowBudgetModal(false);
+        } catch (error) {
+            alert('Failed to save target. Please enter a valid number.');
+        } finally {
+            setIsSavingBudget(false);
         }
     };
 
@@ -62,6 +106,11 @@ export function ManagerDisbursement() {
     const handleDisburse = async (loan: LoanApp) => {
         if (!loan.id) return;
 
+        if (loan.loanAmount >= 1000000) {
+            const confirmed = window.confirm(`HIGH-VALUE TRANSACTION ALERT: You are about to authorize a disbursement of ₦${loan.loanAmount.toLocaleString()}. Please confirm you have verified the recipient's bank details.`);
+            if (!confirmed) return;
+        }
+
         setProcessingId(loan.id);
         try {
             // Simulate a bank api call delay
@@ -72,10 +121,11 @@ export function ManagerDisbursement() {
             addAuditLog(
                 'Funds Disbursed',
                 user?.email || 'Manager',
-                `Disbursed ₦${loan.loanAmount.toLocaleString()} to ${loan.borrowerName} (Loan ID: ${loan.id})`
+                `HIGH-VALUE: Disbursed ₦${loan.loanAmount.toLocaleString()} to ${loan.borrowerName} (Loan ID: ${loan.id})`
             );
 
             await fetchLoans();
+            alert(`Transfer Successful: ₦${loan.loanAmount.toLocaleString()} has been queued for bank settlement.`);
         } catch (error) {
             alert('Failed to process disbursement');
         } finally {
@@ -105,14 +155,36 @@ export function ManagerDisbursement() {
                     <p className="text-gray-500 font-medium">Final authorization and bank transfer gateway</p>
                 </div>
 
+                <div className="flex flex-wrap gap-4">
+                    <button
+                        onClick={() => setShowBudgetModal(true)}
+                        className="bg-white px-6 py-4 rounded-[1.5rem] border border-gray-100 shadow-sm flex items-center gap-3 hover:bg-gray-50 transition-all font-bold text-sm"
+                    >
+                        <TrendingUp className="w-5 h-5 text-primary" />
+                        {monthlyBudget ? 'Update Target' : 'Set Monthly Target'}
+                    </button>
+                    <button
+                        onClick={() => setShowPastDisbursements(true)}
+                        className="bg-gray-900 text-white px-6 py-4 rounded-[1.5rem] shadow-xl shadow-gray-900/10 flex items-center gap-3 hover:bg-gray-800 transition-all font-bold text-sm"
+                    >
+                        <HistoryIcon className="w-5 h-5 text-primary" />
+                        Past Disbursements
+                    </button>
+                </div>
+
                 <div className="bg-gray-900 px-8 py-4 rounded-[2rem] text-white flex items-center gap-6 shadow-xl shadow-gray-900/10">
                     <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Awaiting Transfer</p>
-                        <p className="text-2xl font-black">₦{totalToDisburse.toLocaleString()}</p>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Expected Transfer</p>
+                        <p className="text-2xl font-black">₦{monthlyBudget?.expectedAmount.toLocaleString() || '0'}</p>
                     </div>
                     <div className="w-px h-8 bg-white/10" />
                     <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Count</p>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Actual Disbursed</p>
+                        <p className="text-2xl font-black text-emerald-400">₦{monthlyBudget?.actualAmount.toLocaleString() || '0'}</p>
+                    </div>
+                    <div className="w-px h-8 bg-white/10" />
+                    <div>
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Pending Count</p>
                         <p className="text-2xl font-black">{approvedLoans.length}</p>
                     </div>
                 </div>
@@ -215,6 +287,92 @@ export function ManagerDisbursement() {
                     )}
                 </main>
             </div>
+
+            {/* Monthly Target Modal */}
+            <AnimatePresence>
+                {showBudgetModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowBudgetModal(false)} className="absolute inset-0 bg-black/40 backdrop-blur-md" />
+                        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl">
+                            <h3 className="text-2xl font-black mb-6 text-gray-900">Set Monthly <span className="text-primary italic">Target</span></h3>
+                            <p className="text-sm text-gray-500 font-medium mb-8">Define the total amount expected to be disbursed for {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}.</p>
+
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Target Amount (₦)</label>
+                                    <input
+                                        type="number"
+                                        value={targetAmountInput}
+                                        onChange={(e) => setTargetAmountInput(e.target.value)}
+                                        placeholder="e.g. 5000000"
+                                        className="w-full px-6 py-4 bg-gray-50 border-none rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all font-black text-lg"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleSaveBudget}
+                                    disabled={isSavingBudget}
+                                    className="w-full py-5 bg-primary text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all flex items-center justify-center gap-3"
+                                >
+                                    {isSavingBudget ? <Clock className="w-5 h-5 animate-spin" /> : 'Confirm Target'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Past Disbursements Modal */}
+            <AnimatePresence>
+                {showPastDisbursements && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowPastDisbursements(false)} className="absolute inset-0 bg-black/40 backdrop-blur-md" />
+                        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative bg-white rounded-[3rem] p-10 w-full max-w-4xl max-h-[80vh] overflow-y-auto shadow-2xl">
+                            <div className="flex justify-between items-center mb-10">
+                                <h3 className="text-3xl font-black text-gray-900">Past <span className="text-primary italic">Disbursements</span></h3>
+                                <button onClick={() => setShowPastDisbursements(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                    <AlertCircle className="w-8 h-8 rotate-45" />
+                                </button>
+                            </div>
+
+                            {allBudgets.length > 0 ? (
+                                <div className="space-y-4">
+                                    {allBudgets.map((budget) => (
+                                        <div key={budget.id} className="bg-gray-50 p-8 rounded-[2rem] border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-6">
+                                            <div>
+                                                <p className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-1">{new Date(budget.year, budget.month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+                                                <h4 className="text-xl font-black text-gray-900 tracking-tight">Financial Performance</h4>
+                                            </div>
+                                            <div className="flex gap-8">
+                                                <div className="text-center">
+                                                    <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Target</p>
+                                                    <p className="text-lg font-black text-gray-900">₦{budget.expectedAmount.toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Actual</p>
+                                                    <p className="text-lg font-black text-emerald-600">₦{budget.actualAmount.toLocaleString()}</p>
+                                                </div>
+                                                <div className="text-center">
+                                                    <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Fulfillment</p>
+                                                    <p className={`text-lg font-black ${budget.actualAmount >= budget.expectedAmount ? 'text-emerald-500' : 'text-amber-500'}`}>
+                                                        {budget.expectedAmount > 0 ? ((budget.actualAmount / budget.expectedAmount) * 100).toFixed(0) : 0}%
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-20 text-center bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200">
+                                    <Clock className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                                    <p className="text-gray-400 font-bold">No historical data available yet.</p>
+                                </div>
+                            )}
+
+                            <button onClick={() => setShowPastDisbursements(false)} className="w-full mt-10 py-5 bg-gray-100 text-gray-600 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-gray-200 transition-all">Close History</button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
