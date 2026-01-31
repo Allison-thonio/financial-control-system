@@ -11,7 +11,8 @@ import {
     Settings,
     User,
     Command,
-    Banknote
+    Banknote,
+    CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,6 +50,11 @@ export function Sidebar({ role, forceExpand = false }: SidebarProps) {
                 label: 'Payroll Sim',
                 href: '/manager/payroll',
                 icon: Banknote,
+            },
+            {
+                label: 'Disbursement',
+                href: '/manager/disbursement',
+                icon: CreditCard,
             },
             {
                 label: 'Settings',
