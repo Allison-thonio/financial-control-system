@@ -14,23 +14,23 @@ import {
   getDoc,
 } from 'firebase/firestore';
 
-export interface LoanApplication {
+export interface LoanApp {
   id?: string;
-  userId: string;
-  userName: string;
-  email: string;
+  borrowerName: string;
+  staffEmail: string;
   loanAmount: number;
-  loanReason: string;
-  loanTerm: number;
   monthlyIncome: number;
-  status: 'pending' | 'approved' | 'rejected' | 'disbursed';
-  interestRate: number;
+  loanTenure: number;
   monthlyEMI: number;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-  approvedBy?: string;
-  approvalDate?: Timestamp;
-  rejectionReason?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'disbursed';
+  approvalReason?: string;
+  createdAt: string | Timestamp;
+  updatedAt?: Timestamp;
+  repaymentType: 'default' | 'custom' | 'salary_advance';
+  customRepayments?: number[];
+  appointmentLetter?: string;
+  passportPhoto?: string;
+  nin?: string;
 }
 
 export interface UserProfile {
@@ -38,9 +38,6 @@ export interface UserProfile {
   userId: string;
   email: string;
   name: string;
-  department: string;
-  salary: number;
-  employeeId: string;
   role: 'staff' | 'manager';
   createdAt: Timestamp;
 }
@@ -68,7 +65,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
     const q = query(userRef, where('userId', '==', userId));
     const querySnapshot = await getDocs(q);
     if (querySnapshot.empty) return null;
-    return querySnapshot.docs[0].data() as UserProfile;
+    return { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() } as UserProfile;
   } catch (error) {
     console.error('Error getting user profile:', error);
     return null;
@@ -76,18 +73,12 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
 }
 
 // Loan operations
-export async function createLoanApplication(
-  loanData: Omit<LoanApplication, 'id' | 'createdAt' | 'updatedAt' | 'monthlyEMI'>
-) {
+export async function createLoanApplication(loanData: Omit<LoanApp, 'id' | 'createdAt' | 'updatedAt'>) {
   if (!db) throw new Error('Firebase not initialized');
   try {
     const loansRef = collection(db, 'loans');
-    const monthlyRate = loanData.interestRate / 100 / 12;
-    const emi = calculateEMI(loanData.loanAmount, monthlyRate, loanData.loanTerm);
-
     const docRef = await addDoc(loansRef, {
       ...loanData,
-      monthlyEMI: emi,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
@@ -98,58 +89,50 @@ export async function createLoanApplication(
   }
 }
 
-export async function getLoansByUserId(userId: string): Promise<LoanApplication[]> {
+export async function getLoansByStaff(staffEmail: string): Promise<LoanApp[]> {
   if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
-    const q = query(loansRef, where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const q = query(loansRef, where('staffEmail', '==', staffEmail), orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as LoanApplication));
+    return querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt,
+      } as LoanApp;
+    });
   } catch (error) {
-    console.error('Error getting loans:', error);
+    console.error('Error getting staff loans:', error);
     return [];
   }
 }
 
-export async function getAllLoans(): Promise<LoanApplication[]> {
+export async function getAllLoans(): Promise<LoanApp[]> {
   if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
     const q = query(loansRef, orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as LoanApplication));
+    return querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt,
+      } as LoanApp;
+    });
   } catch (error) {
     console.error('Error getting all loans:', error);
     return [];
   }
 }
 
-export async function getLoanById(loanId: string): Promise<LoanApplication | null> {
-  if (!db) return null;
-  try {
-    const loanDoc = await getDoc(doc(db, 'loans', loanId));
-    if (!loanDoc.exists()) return null;
-    return {
-      id: loanDoc.id,
-      ...loanDoc.data(),
-    } as LoanApplication;
-  } catch (error) {
-    console.error('Error getting loan:', error);
-    return null;
-  }
-}
-
 export async function updateLoanStatus(
   loanId: string,
-  status: LoanApplication['status'],
-  approvedBy?: string,
-  rejectionReason?: string
+  status: LoanApp['status'],
+  approvalReason?: string
 ) {
   if (!db) throw new Error('Firebase not initialized');
   try {
@@ -159,13 +142,8 @@ export async function updateLoanStatus(
       updatedAt: Timestamp.now(),
     };
 
-    if (approvedBy) {
-      updateData.approvedBy = approvedBy;
-      updateData.approvalDate = Timestamp.now();
-    }
-
-    if (rejectionReason) {
-      updateData.rejectionReason = rejectionReason;
+    if (approvalReason) {
+      updateData.approvalReason = approvalReason;
     }
 
     await updateDoc(loanRef, updateData);
@@ -173,36 +151,4 @@ export async function updateLoanStatus(
     console.error('Error updating loan status:', error);
     throw error;
   }
-}
-
-// Helper function to calculate EMI
-function calculateEMI(principal: number, monthlyRate: number, months: number): number {
-  if (monthlyRate === 0) return principal / months;
-  return (principal * monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-}
-
-export function calculateRepaymentSchedule(
-  principal: number,
-  monthlyRate: number,
-  months: number
-): Array<{ month: number; emi: number; principal: number; interest: number; balance: number }> {
-  const emi = calculateEMI(principal, monthlyRate, months);
-  const schedule = [];
-  let balance = principal;
-
-  for (let i = 1; i <= months; i++) {
-    const interestPayment = balance * monthlyRate;
-    const principalPayment = emi - interestPayment;
-    balance -= principalPayment;
-
-    schedule.push({
-      month: i,
-      emi: Math.round(emi * 100) / 100,
-      principal: Math.round(principalPayment * 100) / 100,
-      interest: Math.round(interestPayment * 100) / 100,
-      balance: Math.max(0, Math.round(balance * 100) / 100),
-    });
-  }
-
-  return schedule;
 }

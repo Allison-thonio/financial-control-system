@@ -28,7 +28,7 @@ const SystemContext = createContext<SystemContextType | undefined>(undefined);
 export function SystemProvider({ children }: { children: React.ReactNode }) {
     const [settings, setSettings] = useState<SystemSettings>({
         interestRate: 0.1,
-        maxTenure: 24,
+        maxTenure: 12,
         salaryCapMultiplier: 3
     });
 

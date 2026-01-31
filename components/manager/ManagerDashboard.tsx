@@ -18,132 +18,100 @@ import {
   Filter,
   DollarSign,
   ChevronRight,
-  Search
+  Search,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
-import { calculateTotalRepayment, getDetailedRepaymentSchedule } from '@/lib/loanLogic';
+import { getDetailedRepaymentSchedule } from '@/lib/loanLogic';
 import { useSystem } from '@/contexts/SystemContext';
-
-export interface LoanApp {
-  id: string;
-  staffEmail: string;
-  loanAmount: number;
-  monthlyIncome: number;
-  loanTenure: number;
-  monthlyEMI: number;
-  status: 'pending' | 'approved' | 'rejected';
-  approvalReason?: string;
-  createdAt: string;
-  repaymentType: 'default' | 'custom';
-  customRepayments?: number[];
-  appointmentLetter?: string;
-  passportPhoto?: string;
-  nin?: string;
-}
+import { LoanApp, getAllLoans, updateLoanStatus } from '@/lib/db';
 
 export function ManagerDashboard() {
   const { user, loading: authLoading } = useAuth();
   const { settings, addAuditLog } = useSystem();
   const router = useRouter();
-  const [loans, setLoans] = useState<LoanApp[]>([
-    {
-      id: '1',
-      staffEmail: 'thinkerricker@gmail.com',
-      loanAmount: 50000,
-      monthlyIncome: 30000,
-      loanTenure: 3,
-      monthlyEMI: 21666,
-      status: 'pending',
-      createdAt: '2024-01-15',
-      repaymentType: 'default',
-    },
-    {
-      id: '2',
-      staffEmail: 'robert.brown@company.com',
-      loanAmount: 200000,
-      monthlyIncome: 80000,
-      loanTenure: 3,
-      monthlyEMI: 86666,
-      status: 'approved',
-      createdAt: '2024-01-20',
-      repaymentType: 'custom',
-      customRepayments: [100000, 80000, 80000],
-      nin: '12345678901',
-      appointmentLetter: 'robert_offer_letter.pdf',
-      passportPhoto: 'robert_face.jpg',
-    },
-    {
-      id: '3',
-      staffEmail: 'jane.smith@company.com',
-      loanAmount: 120000,
-      monthlyIncome: 50000,
-      loanTenure: 12,
-      monthlyEMI: 22000,
-      status: 'pending',
-      createdAt: '2024-01-22',
-      repaymentType: 'default',
-      appointmentLetter: 'jane_docs.pdf',
-      passportPhoto: 'jane_avatar.png',
-    }
-  ]);
+  const [loans, setLoans] = useState<LoanApp[]>([]);
+  const [isFetching, setIsFetching] = useState(true);
 
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'collection'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLoan, setSelectedLoan] = useState<LoanApp | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [approvalData, setApprovalData] = useState({ approved: false, reason: '' });
-  const [previewDoc, setPreviewDoc] = useState<{ url: string, type: string } | null>(null);
 
-  const handleExportCSV = (loan: LoanApp) => {
-    const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, new Date(loan.createdAt), settings);
-    const headers = ['Month', 'Date', 'Principal', 'Interest', 'Total', 'Balance'];
-    const rows = schedule.map(s => [
-      s.month + 1,
-      new Date(s.year, s.month).toLocaleDateString(),
-      s.principal,
-      s.interest,
-      s.total,
-      s.remainingBalance
-    ]);
-
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `repayment-schedule-${loan.id.slice(-6)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push('/login');
+    if (!authLoading) {
+      if (!user) {
+        router.push('/login');
+      } else {
+        fetchLoans();
+      }
     }
   }, [authLoading, user, router]);
 
+  const fetchLoans = async () => {
+    setIsFetching(true);
+    try {
+      const allLoans = await getAllLoans();
+      setLoans(allLoans);
+    } catch (error) {
+      console.error('Failed to fetch loans:', error);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Metrics calculation
+  const metrics = useMemo(() => {
+    const approved = loans.filter(l => l.status === 'approved' || l.status === 'disbursed');
+    const disbursed = approved.reduce((sum, l) => sum + l.loanAmount, 0);
+
+    let monthlyCollection = 0;
+    let monthlyExpectedProfit = 0;
+
+    approved.forEach(loan => {
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+      const currentStep = schedule.find(s => s.month === currentMonth && s.year === currentYear);
+      if (currentStep) {
+        monthlyCollection += currentStep.total;
+        monthlyExpectedProfit += currentStep.interest;
+      }
+    });
+
+    return {
+      disbursed,
+      monthlyCollection,
+      monthlyExpectedProfit,
+      totalPending: loans.filter(l => l.status === 'pending').length
+    };
+  }, [loans, settings, currentMonth, currentYear]);
+
+  // Collection Queue
+  const collectionQueue = useMemo(() => {
+    return loans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+      return schedule.some(s => s.month === currentMonth && s.year === currentYear);
+    });
+  }, [loans, settings, currentMonth, currentYear]);
+
   const filteredLoans = useMemo(() => {
+    if (filterStatus === 'collection') return collectionQueue;
     return loans.filter((loan) => {
       const matchesStatus = filterStatus === 'all' || loan.status === filterStatus;
-      const matchesSearch = loan.staffEmail.toLowerCase().includes(searchQuery.toLowerCase()) || loan.id.includes(searchQuery);
+      const matchesSearch = loan.borrowerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loan.staffEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loan.id?.includes(searchQuery);
       return matchesStatus && matchesSearch;
     });
-  }, [loans, filterStatus, searchQuery]);
-
-  const stats = useMemo(() => {
-    const approvedLoans = loans.filter((l) => l.status === 'approved');
-    return {
-      total: loans.length,
-      pending: loans.filter((l) => l.status === 'pending').length,
-      approved: approvedLoans.length,
-      rejected: loans.filter((l) => l.status === 'rejected').length,
-      totalDisbursed: approvedLoans.reduce((sum, l) => sum + l.loanAmount, 0),
-    };
-  }, [loans]);
+  }, [loans, filterStatus, searchQuery, collectionQueue]);
 
   const handleApprove = (loan: LoanApp) => {
     setSelectedLoan(loan);
@@ -162,33 +130,38 @@ export function ManagerDashboard() {
     setShowDetailsModal(true);
   };
 
-  const submitApproval = () => {
-    if (selectedLoan) {
-      setLoans(
-        loans.map((loan) =>
-          loan.id === selectedLoan.id
-            ? {
-              ...loan,
-              status: approvalData.approved ? 'approved' : 'rejected',
-              approvalReason: approvalData.reason || undefined,
-            }
-            : loan
-        )
-      );
+  const submitApproval = async () => {
+    if (selectedLoan?.id) {
+      try {
+        const newStatus = approvalData.approved ? 'approved' : 'rejected';
+        await updateLoanStatus(selectedLoan.id, newStatus, approvalData.reason || undefined);
 
-      addAuditLog(
-        approvalData.approved ? 'Loan Approved' : 'Loan Rejected',
-        user?.email || 'Manager',
-        `Loan ID: ${selectedLoan.id}, Staff: ${selectedLoan.staffEmail}${!approvalData.approved ? `, Reason: ${approvalData.reason}` : ''}`
-      );
+        addAuditLog(
+          approvalData.approved ? 'Loan Approved' : 'Loan Rejected',
+          user?.email || 'Manager',
+          `Loan ID: ${selectedLoan.id}, Client: ${selectedLoan.borrowerName}${!approvalData.approved ? `, Reason: ${approvalData.reason}` : ''}`
+        );
 
-      setShowApprovalModal(false);
-      setSelectedLoan(null);
-      setApprovalData({ approved: false, reason: '' });
+        setShowApprovalModal(false);
+        setSelectedLoan(null);
+        setApprovalData({ approved: false, reason: '' });
+        fetchLoans();
+      } catch (error) {
+        alert('Failed to update status');
+      }
     }
   };
 
-  if (authLoading) return null;
+  if (authLoading || isFetching) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="mt-2 text-gray-600">Loading Manager Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -197,18 +170,18 @@ export function ManagerDashboard() {
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">
             Manager <span className="text-primary">Dashboard</span>
           </h1>
-          <p className="text-sm text-gray-500 font-medium">Control center for loan approvals and financial overview</p>
+          <p className="text-sm text-gray-500 font-medium">Control center for loan approvals and profit tracking</p>
         </div>
 
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100">
-          {(['all', 'pending', 'approved'] as const).map((s) => (
+        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+          {(['all', 'pending', 'collection'] as const).map((s) => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
-              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
+              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
                 }`}
             >
-              {s}
+              {s === 'collection' ? 'Collection Queue' : s}
             </button>
           ))}
         </div>
@@ -216,170 +189,138 @@ export function ManagerDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Total Requests', value: stats.total, icon: FileText, color: 'blue' },
-          { label: 'Pending Action', value: stats.pending, icon: Clock, color: 'amber' },
-          { label: 'Total Approved', value: stats.approved, icon: CheckCircle, color: 'emerald' },
-          { label: 'Disbursed', value: `₦${(stats.totalDisbursed / 1000).toFixed(0)}k`, icon: DollarSign, color: 'primary' },
-        ].map((item, i) => (
-          <motion.div
-            key={item.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm hover:shadow-xl transition-all group"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className={`p-3 rounded-2xl bg-${item.color === 'primary' ? 'primary' : item.color + '-500'}/10 text-${item.color === 'primary' ? 'primary' : item.color + '-600'}`}>
-                <item.icon className="w-6 h-6" />
-              </div>
-              <TrendingUp className="w-5 h-5 text-gray-200 group-hover:text-emerald-500 transition-colors" />
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
+              <DollarSign className="w-6 h-6" />
             </div>
-            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{item.label}</p>
-            <p className="text-3xl font-black text-gray-900 mt-1">{item.value}</p>
-          </motion.div>
-        ))}
+            <ArrowDownRight className="w-5 h-5 text-red-500" />
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Disbursed (All Time)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.disbursed / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection (This Month)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm group">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-amber-100 text-amber-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-1 rounded-full uppercase">Profit Target</div>
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest (This Month)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-blue-100 text-blue-600">
+              <Clock className="w-6 h-6" />
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Pending Approvals</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">{metrics.totalPending}</p>
+        </div>
       </div>
 
-      {/* Search & Actions Bar */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="flex-1 relative group">
           <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-primary transition-colors" />
           <input
             type="text"
-            placeholder="Search by staff email or loan ID..."
+            placeholder="Search by client name, staff email or loan ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-14 pr-6 py-4 bg-white border border-gray-100 rounded-2xl focus:ring-4 focus:ring-primary/5 focus:border-primary outline-none transition-all text-sm font-medium"
           />
         </div>
-        <button className="px-6 py-4 bg-white border border-gray-100 rounded-2xl flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors">
-          <Filter className="w-5 h-5 text-gray-400" />
-          <span className="text-sm font-bold text-gray-600">Filters</span>
-        </button>
       </div>
 
-      {/* Responsive Table / Cards */}
       <div className="bg-white rounded-[2.5rem] border border-gray-50 shadow-sm overflow-hidden">
-        <div className="hidden lg:block overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="bg-gray-50/50 border-b border-gray-100">
               <tr>
-                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Applicant</th>
-                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Principal</th>
-                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Tenure</th>
-                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Monthly EMI</th>
+                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest w-12">SN</th>
+                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Client</th>
+                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Due (This Month)</th>
+                <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Repayment</th>
                 <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
                 <th className="px-8 py-6 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filteredLoans.map((loan, idx) => (
-                <motion.tr
-                  key={loan.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className="hover:bg-gray-50/50 transition-colors group"
-                >
-                  <td className="px-8 py-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary font-bold">
-                        {loan.staffEmail[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">{loan.staffEmail}</p>
-                        <p className="text-[10px] text-gray-400 font-medium">#{loan.id.slice(-6)}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <p className="text-sm font-black text-gray-900">₦{loan.loanAmount.toLocaleString()}</p>
-                  </td>
-                  <td className="px-8 py-6">
-                    <span className="text-xs font-bold text-gray-600">{loan.loanTenure} Mo</span>
-                  </td>
-                  <td className="px-8 py-6">
-                    <p className="text-sm font-bold text-primary">₦{loan.monthlyEMI.toLocaleString()}</p>
-                  </td>
-                  <td className="px-8 py-6">
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${loan.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
-                      loan.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
-                      }`}>
-                      {loan.status}
-                    </span>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => handleViewDetails(loan)} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-gray-100 hover:shadow-sm">
-                        <Eye className="w-4 h-4 text-gray-400" />
-                      </button>
-                      {loan.status === 'pending' && (
-                        <div className="flex gap-1">
-                          <button onClick={() => handleApprove(loan)} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-all border border-transparent hover:border-emerald-100">
-                            <CheckCircle className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleReject(loan)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-all border border-transparent hover:border-red-100">
-                            <XCircle className="w-4 h-4" />
-                          </button>
+              {filteredLoans.map((loan, idx) => {
+                const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+                const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+                const thisMonthDue = schedule.find(s => s.month === currentMonth && s.year === currentYear)?.total || 0;
+                const totalWithInterest = schedule.reduce((sum, s) => sum + s.total, 0);
+
+                return (
+                  <motion.tr
+                    key={loan.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="hover:bg-gray-50/50 transition-colors group"
+                  >
+                    <td className="px-8 py-6 text-[10px] font-black text-gray-300">{idx + 1}</td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary font-bold">
+                          {loan.borrowerName[0].toUpperCase()}
                         </div>
-                      )}
-                    </div>
-                  </td>
-                </motion.tr>
-              ))}
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">{loan.borrowerName}</p>
+                          <p className="text-[10px] text-gray-400 font-medium">By {loan.staffEmail.split('@')[0]}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-8 py-6">
+                      <p className="text-sm font-black text-primary">₦{thisMonthDue.toLocaleString()}</p>
+                    </td>
+                    <td className="px-8 py-6">
+                      <p className="text-sm font-bold text-gray-600">₦{totalWithInterest.toLocaleString()}</p>
+                    </td>
+                    <td className="px-8 py-6">
+                      <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${loan.status === 'approved' || loan.status === 'disbursed' ? 'bg-emerald-50 text-emerald-600' :
+                        loan.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+                        }`}>
+                        {loan.status}
+                      </span>
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => handleViewDetails(loan)} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-gray-100 hover:shadow-sm">
+                          <Eye className="w-4 h-4 text-gray-400" />
+                        </button>
+                        {loan.status === 'pending' && (
+                          <div className="flex gap-1">
+                            <button onClick={() => handleApprove(loan)} className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-all border border-transparent hover:border-emerald-100">
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleReject(loan)} className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-all border border-transparent hover:border-red-100">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </motion.tr>
+                );
+              })}
             </tbody>
           </table>
-        </div>
-
-        {/* Mobile List View */}
-        <div className="lg:hidden divide-y divide-gray-50">
-          {filteredLoans.map((loan) => (
-            <div key={loan.id} className="p-6 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary font-bold">
-                    {loan.staffEmail[0].toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">{loan.staffEmail.split('@')[0]}</p>
-                    <p className="text-[10px] text-gray-400 font-medium">#{loan.id.slice(-6)}</p>
-                  </div>
-                </div>
-                <span className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-tighter ${loan.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
-                  loan.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
-                  }`}>
-                  {loan.status}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gray-50 p-3 rounded-xl">
-                  <p className="text-[8px] text-gray-400 font-black uppercase mb-1">Loan Amount</p>
-                  <p className="text-sm font-black">₦{loan.loanAmount.toLocaleString()}</p>
-                </div>
-                <div className="bg-gray-50 p-3 rounded-xl">
-                  <p className="text-[8px] text-gray-400 font-black uppercase mb-1">Monthly EMI</p>
-                  <p className="text-sm font-black text-primary">₦{loan.monthlyEMI.toLocaleString()}</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleViewDetails(loan)}
-                  className="flex-1 py-3 bg-gray-900 text-white rounded-xl text-xs font-black uppercase tracking-widest"
-                >
-                  View Details
-                </button>
-                {loan.status === 'pending' && (
-                  <button
-                    onClick={() => handleApprove(loan)}
-                    className="flex-1 py-3 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest"
-                  >
-                    Approve
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
         </div>
 
         {filteredLoans.length === 0 && (
@@ -387,12 +328,12 @@ export function ManagerDashboard() {
             <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Search className="w-10 h-10 text-gray-200" />
             </div>
-            <p className="text-gray-400 font-bold">No matching loan requests found</p>
+            <p className="text-gray-400 font-bold">No records found for this view</p>
           </div>
         )}
       </div>
 
-      {/* Details Modal with Prescriptive Calculations */}
+      {/* Details Spreadsheet Modal */}
       <AnimatePresence>
         {showDetailsModal && selectedLoan && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -412,31 +353,52 @@ export function ManagerDashboard() {
               <div className="p-8 md:p-12 space-y-10">
                 <header className="flex justify-between items-start">
                   <div>
-                    <h2 className="text-3xl font-black text-gray-900 tracking-tight">Loan <span className="text-primary italic">Spreadsheet</span></h2>
-                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Ref No: {selectedLoan.id}</p>
+                    <h2 className="text-3xl font-black text-gray-900 tracking-tight">Client <span className="text-primary italic">Spreadsheet</span></h2>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Client: {selectedLoan.borrowerName}</p>
                   </div>
                   <button onClick={() => setShowDetailsModal(false)} className="p-3 hover:bg-gray-100 rounded-full transition-colors">
                     <XCircle className="w-8 h-8 text-gray-300" />
                   </button>
                 </header>
 
-                {/* Main Data Breakdown */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   <div className="space-y-6">
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
-                      <p className="text-[10px] text-primary font-black uppercase mb-2">Total Repayment</p>
-                      <p className="text-3xl font-black text-gray-900">₦{calculateTotalRepayment(selectedLoan.loanAmount, selectedLoan.loanTenure, settings).total.toLocaleString()}</p>
-                      <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Incl. {settings.interestRate * 100}% monthly interest</p>
+                      <p className="text-[10px] text-primary font-black uppercase mb-2">Total Expected Carry</p>
+                      <p className="text-3xl font-black text-gray-900">
+                        ₦{getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Status: {['approved', 'disbursed'].includes(selectedLoan.status) ? 'Still Paying' : 'Awaiting Approval'}</p>
                     </div>
+
                     <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Applicant Details</h4>
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center font-black text-gray-600">
-                          {selectedLoan.staffEmail[0].toUpperCase()}
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Client Identity</h4>
+                      <div className="relative aspect-square rounded-[2rem] overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center">
+                        {selectedLoan.passportPhoto ? (
+                          <div className="text-primary font-black text-xl">PASSPORT PHOTO</div>
+                        ) : (
+                          <div className="text-gray-300 italic text-xs">No Photo</div>
+                        )}
+                        <UserCheck className="absolute bottom-4 right-4 w-8 h-8 text-primary/20" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Records</h4>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <div className="flex items-center gap-3">
+                            <Briefcase className="w-4 h-4 text-gray-400" />
+                            <span className="text-xs font-bold text-gray-700">Appointment Letter</span>
+                          </div>
+                          <button className="text-primary"><Eye className="w-4 h-4" /></button>
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{selectedLoan.staffEmail}</p>
-                          <p className="text-xs text-gray-500">Verified Employee</p>
+                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <div className="flex items-center gap-3">
+                            <UserCheck className="w-4 h-4 text-gray-400" />
+                            <span className="text-xs font-bold text-gray-700">Passport Photo</span>
+                          </div>
+                          <button className="text-primary"><Eye className="w-4 h-4" /></button>
                         </div>
                       </div>
                     </div>
@@ -445,82 +407,31 @@ export function ManagerDashboard() {
                   <div className="lg:col-span-2 space-y-6">
                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
-                      Monthly Repayment Spreadsheet
+                      Numbered Ledger Projection
                     </h4>
                     <div className="bg-gray-50/50 rounded-[2rem] border border-gray-100 overflow-hidden">
-                      <div className="p-4 bg-white/50 border-b border-gray-100 flex justify-between items-center px-6">
-                        <h5 className="text-[10px] font-black uppercase text-gray-400">Projection Ledger</h5>
-                        <button
-                          onClick={() => handleExportCSV(selectedLoan)}
-                          className="flex items-center gap-2 text-[10px] font-black text-primary hover:text-primary/70 transition-colors bg-white px-3 py-1.5 rounded-lg border border-primary/10 shadow-sm"
-                        >
-                          <Download className="w-3 h-3" />
-                          Export CSV
-                        </button>
-                      </div>
                       <table className="w-full text-left text-xs">
                         <thead className="bg-white/50">
                           <tr>
-                            <th className="px-6 py-4 font-black uppercase tracking-tighter">Month</th>
+                            <th className="px-6 py-4 font-black uppercase tracking-tighter w-12 text-gray-400">SN</th>
+                            <th className="px-6 py-4 font-black uppercase tracking-tighter">Month Cycle</th>
                             <th className="px-6 py-4 font-black uppercase tracking-tighter">Principal</th>
                             <th className="px-6 py-4 font-black uppercase tracking-tighter">Interest</th>
-                            <th className="px-6 py-4 font-black uppercase tracking-tighter text-primary">Total</th>
-                            <th className="px-6 py-4 font-black uppercase tracking-tighter">Balance</th>
+                            <th className="px-6 py-4 font-black uppercase tracking-tighter text-primary">Total Carry</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, new Date(selectedLoan.createdAt), settings).map((step, i) => (
+                          {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).map((step, i) => (
                             <tr key={i} className="hover:bg-white transition-colors">
+                              <td className="px-6 py-4 text-gray-300 font-black">{i + 1}</td>
                               <td className="px-6 py-4 font-medium">{new Date(step.year, step.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
                               <td className="px-6 py-4">₦{step.principal.toLocaleString()}</td>
                               <td className="px-6 py-4">₦{step.interest.toLocaleString()}</td>
                               <td className="px-6 py-4 font-black text-primary">₦{step.total.toLocaleString()}</td>
-                              <td className="px-6 py-4 text-gray-400">₦{step.remainingBalance.toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Verification Documentation */}
-                <div className="space-y-6 pt-4">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <FileText className="w-4 h-4" />
-                    Employee Verification Records
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className="p-5 border border-gray-100 rounded-3xl bg-gray-50/50 flex items-center justify-between hover:bg-white hover:shadow-md transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-blue-100 rounded-2xl text-blue-600"><Briefcase className="w-5 h-5" /></div>
-                        <div><p className="text-[10px] font-black">Offer Letter</p><p className="text-[8px] text-gray-400 truncate max-w-[80px]">{selectedLoan.appointmentLetter || 'verified.pdf'}</p></div>
-                      </div>
-                      <button className="p-2 border border-blue-100 text-blue-600 rounded-xl hover:bg-blue-50 transition-colors"><Download className="w-4 h-4" /></button>
-                    </div>
-
-                    <div className="p-5 border border-gray-100 rounded-3xl bg-gray-50/50 flex items-center justify-between hover:bg-white hover:shadow-md transition-all">
-                      <div className="flex items-center gap-3">
-                        <div className="p-3 bg-emerald-100 rounded-2xl text-emerald-600"><UserCheck className="w-5 h-5" /></div>
-                        <div><p className="text-[10px] font-black">Passport Photo</p><p className="text-[8px] text-gray-400">Employee-Identity.jpg</p></div>
-                      </div>
-                      <button
-                        onClick={() => setPreviewDoc({ url: '/passport-placeholder.jpg', type: 'image' })}
-                        className="p-2 border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="p-5 bg-gray-900 rounded-3xl flex items-center justify-between text-white lg:col-span-1 border border-gray-800 shadow-xl overflow-hidden relative">
-                      <div className="absolute right-0 top-0 h-full w-24 bg-white/5 skew-x-[20deg] translate-x-12" />
-                      <div className="flex items-center gap-4 relative z-10">
-                        <div className="p-3 bg-white/10 rounded-2xl"><IdCard className="w-6 h-6 text-gray-400" /></div>
-                        <div>
-                          <p className="text-[8px] text-gray-400 font-black uppercase">National ID (NIN)</p>
-                          <p className="text-sm font-mono font-black tracking-widest">{selectedLoan.nin || 'UNPROVIDED'}</p>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -544,7 +455,7 @@ export function ManagerDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Basic Approval/Rejection Modal */}
+      {/* Approval Modal */}
       <AnimatePresence>
         {showApprovalModal && selectedLoan && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -557,7 +468,7 @@ export function ManagerDashboard() {
               <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 mb-6">
                 <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Authorizing amount</p>
                 <p className="text-2xl font-black text-gray-900">₦{selectedLoan.loanAmount.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">For: {selectedLoan.staffEmail}</p>
+                <p className="text-xs text-gray-500 mt-1">For: {selectedLoan.borrowerName}</p>
               </div>
 
               {!approvalData.approved && (
@@ -580,48 +491,6 @@ export function ManagerDashboard() {
                 <button onClick={() => setShowApprovalModal(false)} className="px-6 py-4 bg-gray-100 text-gray-400 rounded-2xl font-black transition-colors">
                   Cancel
                 </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Document Lightbox */}
-      <AnimatePresence>
-        {previewDoc && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-10">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setPreviewDoc(null)}
-              className="absolute inset-0 bg-black/90 backdrop-blur-xl"
-            />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative max-w-4xl w-full bg-white rounded-[3rem] overflow-hidden shadow-2xl"
-            >
-              <div className="p-10 flex flex-col items-center">
-                <div className="w-full flex justify-between items-center mb-6">
-                  <h4 className="text-xl font-black uppercase tracking-widest text-gray-900 italic">Document <span className="text-primary">Preview</span></h4>
-                  <button onClick={() => setPreviewDoc(null)} className="p-3 bg-gray-100 rounded-full hover:bg-red-50 hover:text-red-500 transition-all font-black">CLOSE</button>
-                </div>
-                <div className="w-full h-[500px] bg-gray-50 rounded-[2rem] border-4 border-dashed border-gray-100 flex items-center justify-center overflow-hidden">
-                  {/* In a real app we'd use the actual URL. Here we simulate an image preview */}
-                  <div className="text-center space-y-4">
-                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                      <FileText className="w-10 h-10 text-primary" />
-                    </div>
-                    <p className="text-gray-400 font-bold text-sm">Document preview for demonstration purposes.<br />Actual file: {previewDoc.url}</p>
-                  </div>
-                </div>
-                <div className="mt-8 flex gap-4 w-full">
-                  <button className="flex-1 py-4 bg-gray-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                    <Download className="w-4 h-4" /> Download Official Copy
-                  </button>
-                </div>
               </div>
             </motion.div>
           </div>
