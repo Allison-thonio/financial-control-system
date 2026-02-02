@@ -22,6 +22,8 @@ export function StaffDashboard() {
   const [filterStatus, setFilterStatus] = useState<'applications' | 'collection'>('applications');
   const [allLoans, setAllLoans] = useState<LoanApp[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionComplete, setSubmissionComplete] = useState(false);
 
   const [formData, setFormData] = useState({
     borrowerName: '',
@@ -245,20 +247,40 @@ export function StaffDashboard() {
 
     const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings);
 
-    setIsFetching(true);
+    setIsSubmitting(true);
     try {
-      let appointmentLetterUrl = '';
-      let passportPhotoUrl = '';
+      // Parallelize file uploads
+      const uploadTasks: Promise<{ type: string, url: string }>[] = [];
 
       if (formData.appointmentLetter) {
-        appointmentLetterUrl = await uploadFile(formData.appointmentLetter, `documents/${user?.uid}/appointment_letter_${Date.now()}`);
-      } else if (isReturning) {
-        appointmentLetterUrl = returningBorrowers.find(b => (b.userName || b.borrowerName) === name)?.appointmentLetter || '';
+        uploadTasks.push(
+          uploadFile(formData.appointmentLetter, `documents/${user?.uid}/appointment_letter_${Date.now()}`)
+            .then(url => ({ type: 'appointment', url }))
+        );
       }
 
       if (formData.passportPhoto) {
-        passportPhotoUrl = await uploadFile(formData.passportPhoto, `documents/${user?.uid}/passport_photo_${Date.now()}`);
-      } else if (isReturning) {
+        uploadTasks.push(
+          uploadFile(formData.passportPhoto, `documents/${user?.uid}/passport_photo_${Date.now()}`)
+            .then(url => ({ type: 'passport', url }))
+        );
+      }
+
+      const uploadResults = await Promise.all(uploadTasks);
+
+      let appointmentLetterUrl = '';
+      let passportPhotoUrl = '';
+
+      uploadResults.forEach(res => {
+        if (res.type === 'appointment') appointmentLetterUrl = res.url;
+        if (res.type === 'passport') passportPhotoUrl = res.url;
+      });
+
+      // Fallback for returning clients if no new file uploaded
+      if (!appointmentLetterUrl && isReturning) {
+        appointmentLetterUrl = returningBorrowers.find(b => (b.userName || b.borrowerName) === name)?.appointmentLetter || '';
+      }
+      if (!passportPhotoUrl && isReturning) {
         passportPhotoUrl = returningBorrowers.find(b => (b.userName || b.borrowerName) === name)?.passportPhoto || '';
       }
 
@@ -281,10 +303,14 @@ export function StaffDashboard() {
 
       await createLoanApplication(newLoanData);
       addAuditLog('New Application', user?.email || 'Unknown', `Borrower: ${name}, Amount: ₦${amount.toLocaleString()}`);
+
+      setSubmissionComplete(true);
+
       setFormData({
         borrowerName: '',
         loanAmount: '',
         monthlyIncome: '',
+        loanTerm: 3,
         loanTenure: '3',
         repaymentType: 'default',
         customMonth1: '',
@@ -293,10 +319,18 @@ export function StaffDashboard() {
         nin: '',
         appointmentLetter: null,
         passportPhoto: null,
-      });
-      setShowForm(false);
-      fetchLoans();
+      } as any);
+
+      // Brief delay to show success state before closing
+      setTimeout(() => {
+        setIsSubmitting(false);
+        setSubmissionComplete(false);
+        setShowForm(false);
+        fetchLoans();
+      }, 1500);
+
     } catch (error) {
+      setIsSubmitting(false);
       alert('Failed to submit application. Please check your connection.');
       console.error(error);
     }
@@ -624,8 +658,25 @@ export function StaffDashboard() {
                       </AnimatePresence>
 
                       <div className="flex gap-4 pt-4">
-                        <button type="submit" className="flex-1 py-5 bg-primary text-white rounded-2xl font-black shadow-xl shadow-primary/20 active:scale-95 transition-all text-lg">
-                          Apply for Loan
+                        <button
+                          type="submit"
+                          disabled={isSubmitting}
+                          className={`flex-1 py-5 rounded-2xl font-black shadow-xl active:scale-95 transition-all text-lg flex items-center justify-center gap-3 ${submissionComplete ? 'bg-emerald-500 shadow-emerald-200' : 'bg-primary shadow-primary/20'
+                            } text-white`}
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <Clock className="w-5 h-5 animate-spin" />
+                              <span>Processing...</span>
+                            </>
+                          ) : submissionComplete ? (
+                            <>
+                              <CheckCircle className="w-5 h-5" />
+                              <span>Submitted!</span>
+                            </>
+                          ) : (
+                            'Apply for Loan'
+                          )}
                         </button>
                         <button type="button" onClick={() => setShowForm(false)} className="px-8 py-5 bg-gray-100 text-gray-600 rounded-2xl font-black hover:bg-gray-200 transition-all">
                           Discard
