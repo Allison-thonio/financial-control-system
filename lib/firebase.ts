@@ -14,9 +14,15 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
+try {
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApp();
+  }
+} catch (error) {
+  console.error("Firebase initialization failed:", error);
+  // Fallback app if needed, but initializeApp usually throws if config is invalid
   app = getApp();
 }
 
@@ -24,13 +30,6 @@ const auth: Auth = getAuth(app);
 const db: Firestore = getFirestore(app);
 const storage: FirebaseStorage = getStorage(app);
 
-// Check if we are in the browser for analytics
-let analytics = null;
-if (typeof window !== 'undefined') {
-  const { getAnalytics } = require('firebase/analytics');
-  analytics = getAnalytics(app);
-}
-
-export { auth, db, storage, analytics };
+export { auth, db, storage };
 export default app;
 

@@ -93,7 +93,8 @@ export function StaffDashboard() {
   // Collection Queue logic
   const collectionQueue = useMemo(() => {
     return allLoans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
-      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
+        (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
       const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
       return schedule.some(s => s.month === currentMonth && s.year === currentYear);
     });
@@ -131,7 +132,8 @@ export function StaffDashboard() {
     let monthlyExpectedProfit = 0;
 
     approved.forEach(loan => {
-      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
+        (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
       const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
       const currentStep = schedule.find(s => s.month === currentMonth && s.year === currentYear);
       if (currentStep) {
@@ -748,7 +750,8 @@ export function StaffDashboard() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {filteredCollection.map((loan, idx) => {
-                      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+                      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
+                        (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
                       const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
                       const thisMonthDue = schedule.find(s => s.month === currentMonth && s.year === currentYear)?.total || 0;
                       const totalWithInterest = schedule.reduce((sum, s) => sum + s.total, 0);
@@ -845,7 +848,7 @@ export function StaffDashboard() {
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                       <p className="text-[10px] text-primary font-black uppercase mb-2">Total Carry Amount</p>
                       <p className="text-3xl font-black text-gray-900">
-                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
+                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
                       </p>
                       <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Status: {['approved', 'disbursed'].includes(selectedLoanForDetails.status) ? 'Still Paying' : 'Pending Verification'}</p>
                     </div>
@@ -931,7 +934,7 @@ export function StaffDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).map((step, i) => (
+                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings).map((step, i) => (
                             <tr key={i} className="hover:bg-white transition-colors">
                               <td className="px-6 py-4 text-gray-400 font-black">{i + 1}</td>
                               <td className="px-6 py-4 font-medium">{new Date(step.year, step.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
