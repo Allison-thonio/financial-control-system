@@ -58,7 +58,14 @@ export function ManagerDashboard() {
   const fetchLoans = async () => {
     setIsFetching(true);
     try {
-      const allLoans = await getAllLoans();
+      const withTimeout = async <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+        const timeout = new Promise<T>((resolve) =>
+          setTimeout(() => resolve(fallback), ms)
+        );
+        return Promise.race([promise, timeout]);
+      };
+
+      const allLoans = await withTimeout(getAllLoans(), 10000, []);
       setLoans(allLoans);
     } catch (error) {
       console.error('Failed to fetch loans:', error);

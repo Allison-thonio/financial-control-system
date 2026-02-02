@@ -14,22 +14,24 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
+
 try {
   if (getApps().length === 0) {
     app = initializeApp(firebaseConfig);
   } else {
     app = getApp();
   }
+  auth = getAuth(app);
+  db = getFirestore(app);
+  storage = getStorage(app);
 } catch (error) {
   console.error("Firebase initialization failed:", error);
-  // Fallback app if needed, but initializeApp usually throws if config is invalid
-  app = getApp();
+  // These will be caught by AuthContext's demo mode check
 }
 
-const auth: Auth = getAuth(app);
-const db: Firestore = getFirestore(app);
-const storage: FirebaseStorage = getStorage(app);
-
 export { auth, db, storage };
-export default app;
+export default app!;
 

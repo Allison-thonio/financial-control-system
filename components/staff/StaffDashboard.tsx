@@ -71,17 +71,48 @@ export function StaffDashboard() {
   }, [authLoading, user, router]);
 
   const fetchLoans = async () => {
-    if (!user?.email) return;
+    if (!user?.email) {
+      console.warn('[StaffDashboard] No user email found, skipping fetch');
+      setIsFetching(false);
+      return;
+    }
+
     setIsFetching(true);
+    console.log('[StaffDashboard] Starting fetch for:', user.email);
+
     try {
+      // Timeout helper
+      const withTimeout = async <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+        const timeout = new Promise<T>((resolve) =>
+          setTimeout(() => {
+            console.warn(`[StaffDashboard] Fetch timed out after ${ms}ms`);
+            resolve(fallback);
+          }, ms)
+        );
+        return Promise.race([promise, timeout]);
+      };
+
+      // Individual fetches to prevent one failure from blocking everything
+      const staffLoansPromise = withTimeout(getLoansByStaff(user.email), 10000, []).catch(err => {
+        console.error('[StaffDashboard] Staff loans fetch failed:', err);
+        return [];
+      });
+
+      const allLoansPromise = withTimeout(getAllLoans(), 10000, []).catch(err => {
+        console.error('[StaffDashboard] All loans fetch failed:', err);
+        return [];
+      });
+
       const [staffLoans, totalLoans] = await Promise.all([
-        getLoansByStaff(user.email),
-        getAllLoans()
+        staffLoansPromise,
+        allLoansPromise
       ]);
+
       setLoans(staffLoans);
       setAllLoans(totalLoans);
+      console.log('[StaffDashboard] Fetch complete. Staff loans:', staffLoans.length, 'Total loans available:', totalLoans.length);
     } catch (error) {
-      console.error('Failed to fetch loans:', error);
+      console.error('[StaffDashboard] General fetch error:', error);
     } finally {
       setIsFetching(false);
     }

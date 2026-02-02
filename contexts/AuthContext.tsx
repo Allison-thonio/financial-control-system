@@ -64,6 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkDemoAuth]);
 
   useEffect(() => {
+    // Safety timeout to prevent perpetual loading
+    const safetyTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 15000);
+
     // Check if auth is properly initialized (null auth means demo mode)
     console.log('[System] AuthProvider initializing - auth:', auth, 'db:', db);
 
@@ -72,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsDemoMode(true);
       checkDemoAuth();
       setLoading(false);
+      clearTimeout(safetyTimeout);
       return;
     }
 
@@ -104,14 +110,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           checkDemoAuth();
         }
         setLoading(false);
+        clearTimeout(safetyTimeout);
       });
 
-      return unsubscribe;
+      return () => {
+        unsubscribe();
+        clearTimeout(safetyTimeout);
+      };
     } catch (error) {
       console.error('[System] Firebase not properly initialized:', error);
       setIsDemoMode(true);
       checkDemoAuth();
       setLoading(false);
+      clearTimeout(safetyTimeout);
     }
   }, [checkDemoAuth]);
 
