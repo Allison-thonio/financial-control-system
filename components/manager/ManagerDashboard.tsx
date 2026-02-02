@@ -77,7 +77,7 @@ export function ManagerDashboard() {
 
     approved.forEach(loan => {
       const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
-      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
       const currentStep = schedule.find(s => s.month === currentMonth && s.year === currentYear);
       if (currentStep) {
         monthlyCollection += currentStep.total;
@@ -97,7 +97,7 @@ export function ManagerDashboard() {
   const collectionQueue = useMemo(() => {
     return loans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
       const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
-      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
       return schedule.some(s => s.month === currentMonth && s.year === currentYear);
     });
   }, [loans, settings, currentMonth, currentYear]);
@@ -106,8 +106,8 @@ export function ManagerDashboard() {
     if (filterStatus === 'collection') return collectionQueue;
     return loans.filter((loan) => {
       const matchesStatus = filterStatus === 'all' || loan.status === filterStatus;
-      const matchesSearch = loan.borrowerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        loan.staffEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      const matchesSearch = (loan.userName || loan.borrowerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (loan.email || loan.staffEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         loan.id?.includes(searchQuery);
       return matchesStatus && matchesSearch;
     });
@@ -139,7 +139,7 @@ export function ManagerDashboard() {
         addAuditLog(
           approvalData.approved ? 'Loan Approved' : 'Loan Rejected',
           user?.email || 'Manager',
-          `Loan ID: ${selectedLoan.id}, Client: ${selectedLoan.borrowerName}${!approvalData.approved ? `, Reason: ${approvalData.reason}` : ''}`
+          `Loan ID: ${selectedLoan.id}, Client: ${selectedLoan.userName || selectedLoan.borrowerName}${!approvalData.approved ? `, Reason: ${approvalData.reason}` : ''}`
         );
 
         setShowApprovalModal(false);
@@ -262,7 +262,7 @@ export function ManagerDashboard() {
             <tbody className="divide-y divide-gray-50">
               {filteredLoans.map((loan, idx) => {
                 const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
-                const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTenure, createdAt, loan.monthlyIncome, settings);
+                const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
                 const thisMonthDue = schedule.find(s => s.month === currentMonth && s.year === currentYear)?.total || 0;
                 const totalWithInterest = schedule.reduce((sum, s) => sum + s.total, 0);
 
@@ -278,11 +278,11 @@ export function ManagerDashboard() {
                     <td className="px-8 py-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary font-bold">
-                          {loan.borrowerName[0].toUpperCase()}
+                          {(loan.userName || loan.borrowerName || 'U')[0].toUpperCase()}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-gray-900">{loan.borrowerName}</p>
-                          <p className="text-[10px] text-gray-400 font-medium">By {loan.staffEmail.split('@')[0]}</p>
+                          <p className="text-sm font-bold text-gray-900">{loan.userName || loan.borrowerName}</p>
+                          <p className="text-[10px] text-gray-400 font-medium">By {(loan.email || loan.staffEmail || 'staff').split('@')[0]}</p>
                         </div>
                       </div>
                     </td>
@@ -366,7 +366,7 @@ export function ManagerDashboard() {
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                       <p className="text-[10px] text-primary font-black uppercase mb-2">Total Expected Carry</p>
                       <p className="text-3xl font-black text-gray-900">
-                        ₦{getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
+                        ₦{getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTerm, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
                       </p>
                       <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Status: {['approved', 'disbursed'].includes(selectedLoan.status) ? 'Still Paying' : 'Awaiting Approval'}</p>
                     </div>
@@ -384,21 +384,65 @@ export function ManagerDashboard() {
                     </div>
 
                     <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Records</h4>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Status</h4>
+                      <div className="grid grid-cols-1 gap-2">
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
                           <div className="flex items-center gap-3">
-                            <Briefcase className="w-4 h-4 text-gray-400" />
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
                             <span className="text-xs font-bold text-gray-700">Appointment Letter</span>
                           </div>
-                          <button className="text-primary"><Eye className="w-4 h-4" /></button>
+                          {selectedLoan.appointmentLetter ? (
+                            <div className="aspect-[4/3] w-full bg-white rounded-xl border border-gray-200 overflow-hidden relative group">
+                              {selectedLoan.appointmentLetter.toLowerCase().endsWith('.pdf') ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 group-hover:bg-primary/5 transition-colors">
+                                  <FileText className="w-12 h-12 text-primary" />
+                                  <span className="text-[10px] font-black text-primary mt-2 uppercase tracking-widest">PDF Document</span>
+                                </div>
+                              ) : (
+                                <img
+                                  src={selectedLoan.appointmentLetter}
+                                  alt="Appointment Letter"
+                                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all cursor-zoom-in"
+                                />
+                              )}
+                              <a
+                                href={selectedLoan.appointmentLetter}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 opacity-0 group-hover:opacity-100 transition-all"
+                              >
+                                <span className="text-[10px] font-black uppercase text-white bg-primary px-3 py-1.5 rounded-full shadow-lg">View Full Doc</span>
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-gray-400 italic">No document archived</div>
+                          )}
                         </div>
-                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
                           <div className="flex items-center gap-3">
-                            <UserCheck className="w-4 h-4 text-gray-400" />
-                            <span className="text-xs font-bold text-gray-700">Passport Photo</span>
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                            <span className="text-xs font-bold text-gray-700">Passport Identity</span>
                           </div>
-                          <button className="text-primary"><Eye className="w-4 h-4" /></button>
+                          {selectedLoan.passportPhoto ? (
+                            <div className="aspect-square w-full bg-white rounded-xl border border-gray-200 overflow-hidden relative group">
+                              <img
+                                src={selectedLoan.passportPhoto}
+                                alt="Passport Photo"
+                                className="w-full h-full object-cover hover:scale-110 transition-transform duration-500 cursor-zoom-in"
+                              />
+                              <a
+                                href={selectedLoan.passportPhoto}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 opacity-0 group-hover:opacity-100 transition-all"
+                              >
+                                <span className="text-[10px] font-black uppercase text-white bg-primary px-3 py-1.5 rounded-full shadow-lg">View Photo</span>
+                              </a>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-gray-400 italic">No identity photo</div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -421,7 +465,7 @@ export function ManagerDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).map((step, i) => (
+                          {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTerm, typeof selectedLoan.createdAt === 'string' ? new Date(selectedLoan.createdAt) : new Date(), selectedLoan.monthlyIncome, settings).map((step, i) => (
                             <tr key={i} className="hover:bg-white transition-colors">
                               <td className="px-6 py-4 text-gray-300 font-black">{i + 1}</td>
                               <td className="px-6 py-4 font-medium">{new Date(step.year, step.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
@@ -468,7 +512,7 @@ export function ManagerDashboard() {
               <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 mb-6">
                 <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Authorizing amount</p>
                 <p className="text-2xl font-black text-gray-900">₦{selectedLoan.loanAmount.toLocaleString()}</p>
-                <p className="text-xs text-gray-500 mt-1">For: {selectedLoan.borrowerName}</p>
+                <p className="text-xs text-gray-500 mt-1">For: {selectedLoan.userName || selectedLoan.borrowerName}</p>
               </div>
 
               {!approvalData.approved && (

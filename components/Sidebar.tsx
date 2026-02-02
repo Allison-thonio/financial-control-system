@@ -98,7 +98,6 @@ export function Sidebar({ role, forceExpand = false }: SidebarProps) {
                         className="whitespace-nowrap"
                     >
                         <h2 className="text-lg font-black tracking-tight leading-tight">Loan<span className="text-primary">Swift</span></h2>
-                        <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em]">v1.0.4</p>
                     </motion.div>
                 </div>
             </div>

@@ -65,10 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check if auth is properly initialized (null auth means demo mode)
-    console.log('[v0] AuthProvider initializing - auth:', auth, 'db:', db);
+    console.log('[System] AuthProvider initializing - auth:', auth, 'db:', db);
 
     if (!auth || typeof auth !== 'object' || !('app' in auth)) {
-      console.log('[v0] Demo mode activated - auth not available');
+      console.log('[Auth] Demo mode activated - auth not available');
       setIsDemoMode(true);
       checkDemoAuth();
       setLoading(false);
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        console.log('[v0] onAuthStateChanged triggered:', firebaseUser?.email);
+        console.log('[Auth] onAuthStateChanged triggered:', firebaseUser?.email);
         if (firebaseUser) {
           try {
             if (db && typeof db === 'object' && 'type' in db) {
@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setUser(firebaseUser as User);
             }
           } catch (error) {
-            console.error('[v0] Error fetching user role:', error);
+            console.error('[Auth] Error fetching user role:', error);
             setUser(firebaseUser as User);
           }
         } else {
@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return unsubscribe;
     } catch (error) {
-      console.error('[v0] Firebase not properly initialized:', error);
+      console.error('[System] Firebase not properly initialized:', error);
       setIsDemoMode(true);
       checkDemoAuth();
       setLoading(false);

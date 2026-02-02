@@ -1,6 +1,7 @@
 'use client';
 
-import { db } from './firebase';
+import { db, storage } from './firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   collection,
   addDoc,
@@ -32,17 +33,22 @@ export const loanSchema = z.object({
 
 export interface LoanApp {
   id?: string;
-  borrowerName: string;
-  staffEmail: string;
+  userId: string;
+  userName: string;
+  email: string;
+  borrowerName?: string; // Legacy field
+  staffEmail?: string; // Legacy field
   loanAmount: number;
+  loanReason: string;
+  loanTerm: number;
   monthlyIncome: number;
-  loanTenure: number;
+  interestRate: number;
   monthlyEMI: number;
   status: 'pending' | 'approved' | 'rejected' | 'disbursed';
   approvalReason?: string;
-  createdAt: string | Timestamp;
-  updatedAt?: Timestamp;
-  repaymentType: 'default' | 'custom' | 'salary_advance';
+  createdAt: string | Timestamp | any;
+  updatedAt?: Timestamp | any;
+  repaymentType?: 'default' | 'custom' | 'salary_advance';
   customRepayments?: number[];
   appointmentLetter?: string;
   passportPhoto?: string;
@@ -321,6 +327,7 @@ export async function getAllMonthlyBudgets(): Promise<MonthlyBudget[]> {
   }
 }
 
+
 export async function calculateMonthlyActualDisbursement(month: number, year: number): Promise<number> {
   if (!db) return 0;
   try {
@@ -353,3 +360,18 @@ export async function calculateMonthlyActualDisbursement(month: number, year: nu
     return 0;
   }
 }
+
+// Storage operations
+export async function uploadFile(file: File, path: string): Promise<string> {
+  if (!storage) throw new Error('Firebase Storage not initialized');
+  try {
+    const storageRef = ref(storage, path);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw error;
+  }
+}
+

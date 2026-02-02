@@ -2,9 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, FileText, AlertCircle, Upload, Paperclip, UserCheck, IdCard, TrendingUp, Calendar, ChevronRight, Info, History as HistoryIcon, CheckCircle, BrainCircuit, ShieldCheck, Sparkles } from 'lucide-react';
+import { Plus, FileText, AlertCircle, Upload, Paperclip, UserCheck, IdCard, TrendingUp, Calendar, ChevronRight, Info, History as HistoryIcon, CheckCircle, BrainCircuit, ShieldCheck, Sparkles, Eye, Search, Clock, DollarSign, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { LoanApp, createLoanApplication, getLoansByStaff } from '@/lib/db';
+import { LoanApp, createLoanApplication, getLoansByStaff, getAllLoans, uploadFile } from '@/lib/db';
 import { calculateTotalRepayment, getDetailedRepaymentSchedule, calculateLoanCapacity } from '@/lib/loanLogic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSystem } from '@/contexts/SystemContext';
@@ -19,6 +19,9 @@ export function StaffDashboard() {
   const [selectedLoanForDetails, setSelectedLoanForDetails] = useState<LoanApp | null>(null);
   const [isFetching, setIsFetching] = useState(true);
   const [showEligibilityModal, setShowEligibilityModal] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<'applications' | 'collection'>('applications');
+  const [allLoans, setAllLoans] = useState<LoanApp[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [formData, setFormData] = useState({
     borrowerName: '',
@@ -37,19 +40,20 @@ export function StaffDashboard() {
   const returningBorrowers = useMemo(() => {
     const borrowers = new Map<string, LoanApp>();
     loans.forEach(loan => {
-      if (!borrowers.has(loan.borrowerName)) {
-        borrowers.set(loan.borrowerName, loan);
+      const name = loan.userName || loan.borrowerName || '';
+      if (name && !borrowers.has(name)) {
+        borrowers.set(name, loan);
       }
     });
     return Array.from(borrowers.values());
   }, [loans]);
 
   const handleSelectReturning = (name: string) => {
-    const prevLoan = loans.find(l => l.borrowerName === name);
+    const prevLoan = loans.find(l => (l.userName || l.borrowerName) === name);
     if (prevLoan) {
       setFormData({
         ...formData,
-        borrowerName: prevLoan.borrowerName,
+        borrowerName: (prevLoan.userName || prevLoan.borrowerName || ''),
         monthlyIncome: prevLoan.monthlyIncome.toString(),
         nin: prevLoan.nin || '',
       });
@@ -70,14 +74,39 @@ export function StaffDashboard() {
     if (!user?.email) return;
     setIsFetching(true);
     try {
-      const staffLoans = await getLoansByStaff(user.email);
+      const [staffLoans, totalLoans] = await Promise.all([
+        getLoansByStaff(user.email),
+        getAllLoans()
+      ]);
       setLoans(staffLoans);
+      setAllLoans(totalLoans);
     } catch (error) {
       console.error('Failed to fetch loans:', error);
     } finally {
       setIsFetching(false);
     }
   };
+
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  // Collection Queue logic
+  const collectionQueue = useMemo(() => {
+    return allLoans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+      return schedule.some(s => s.month === currentMonth && s.year === currentYear);
+    });
+  }, [allLoans, settings, currentMonth, currentYear]);
+
+  const filteredCollection = useMemo(() => {
+    return collectionQueue.filter((loan) => {
+      const matchesSearch = (loan.userName || loan.borrowerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (loan.email || loan.staffEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loan.id?.includes(searchQuery);
+      return matchesSearch;
+    });
+  }, [collectionQueue, searchQuery]);
 
   const eligibleCapacity = useMemo(() => {
     const income = parseFloat(formData.monthlyIncome) || 0;
@@ -92,6 +121,32 @@ export function StaffDashboard() {
     if (amount <= income || income <= 0) return 1;
     return Math.ceil(amount / income);
   }, [formData.loanAmount, formData.monthlyIncome]);
+
+  // Metrics calculation (Staff version of Manager metrics)
+  const metrics = useMemo(() => {
+    const approved = allLoans.filter(l => l.status === 'approved' || l.status === 'disbursed');
+    const disbursed = approved.reduce((sum, l) => sum + l.loanAmount, 0);
+
+    let monthlyCollection = 0;
+    let monthlyExpectedProfit = 0;
+
+    approved.forEach(loan => {
+      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+      const currentStep = schedule.find(s => s.month === currentMonth && s.year === currentYear);
+      if (currentStep) {
+        monthlyCollection += currentStep.total;
+        monthlyExpectedProfit += currentStep.interest;
+      }
+    });
+
+    return {
+      disbursed,
+      monthlyCollection,
+      monthlyExpectedProfit,
+      totalPending: loans.filter(l => l.status === 'pending').length
+    };
+  }, [allLoans, loans, settings, currentMonth, currentYear]);
 
   const loanSummary = useMemo(() => {
     const amount = parseFloat(formData.loanAmount) || 0;
@@ -157,21 +212,40 @@ export function StaffDashboard() {
 
     const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings);
 
-    const newLoanData: Omit<LoanApp, 'id' | 'createdAt' | 'updatedAt'> = {
-      borrowerName: name,
-      staffEmail: user?.email || 'Unknown',
-      loanAmount: amount,
-      monthlyIncome: income,
-      loanTenure: tenure,
-      monthlyEMI: Math.round(totalRepayment / tenure),
-      status: 'pending',
-      repaymentType: amount > income ? 'salary_advance' : 'default',
-      nin: formData.nin || undefined,
-      appointmentLetter: formData.appointmentLetter?.name || returningBorrowers.find(b => b.borrowerName === name)?.appointmentLetter,
-      passportPhoto: formData.passportPhoto?.name || returningBorrowers.find(b => b.borrowerName === name)?.passportPhoto,
-    };
-
+    setIsFetching(true);
     try {
+      let appointmentLetterUrl = '';
+      let passportPhotoUrl = '';
+
+      if (formData.appointmentLetter) {
+        appointmentLetterUrl = await uploadFile(formData.appointmentLetter, `documents/${user?.uid}/appointment_letter_${Date.now()}`);
+      } else if (isReturning) {
+        appointmentLetterUrl = returningBorrowers.find(b => (b.userName || b.borrowerName) === name)?.appointmentLetter || '';
+      }
+
+      if (formData.passportPhoto) {
+        passportPhotoUrl = await uploadFile(formData.passportPhoto, `documents/${user?.uid}/passport_photo_${Date.now()}`);
+      } else if (isReturning) {
+        passportPhotoUrl = returningBorrowers.find(b => (b.userName || b.borrowerName) === name)?.passportPhoto || '';
+      }
+
+      const newLoanData: Omit<LoanApp, 'id' | 'createdAt' | 'updatedAt'> = {
+        userId: user?.uid || 'Unknown',
+        userName: name,
+        email: user?.email || 'Unknown',
+        loanAmount: amount,
+        loanReason: amount > income ? 'Salary Advance' : 'General Purpose',
+        monthlyIncome: income,
+        loanTerm: tenure,
+        interestRate: settings.interestRate * 100, // Store as percentage for display
+        monthlyEMI: Math.round(totalRepayment / tenure),
+        status: 'pending',
+        repaymentType: amount > income ? 'salary_advance' : 'default',
+        nin: formData.nin || undefined,
+        appointmentLetter: appointmentLetterUrl,
+        passportPhoto: passportPhotoUrl,
+      };
+
       await createLoanApplication(newLoanData);
       addAuditLog('New Application', user?.email || 'Unknown', `Borrower: ${name}, Amount: ₦${amount.toLocaleString()}`);
       setFormData({
@@ -217,14 +291,74 @@ export function StaffDashboard() {
           </h1>
           <p className="text-sm text-gray-500 font-medium">Register loan applications for clients</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center justify-center gap-2 px-6 py-4 bg-primary text-white rounded-2xl hover:shadow-xl hover:shadow-primary/30 transition-all font-bold active:scale-95"
-        >
-          <Plus className="w-5 h-5" />
-          New Application
-        </button>
+        <div className="flex items-center gap-4">
+          <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+            {(['applications', 'collection'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
+                  }`}
+              >
+                {s === 'collection' ? 'Collection Queue' : 'My Applications'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center justify-center gap-2 px-6 py-4 bg-primary text-white rounded-2xl hover:shadow-xl hover:shadow-primary/30 transition-all font-bold active:scale-95"
+          >
+            <Plus className="w-5 h-5" />
+            New Application
+          </button>
+        </div>
       </header>
+
+      {/* Stats Grid - Mirroring Manager View */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
+              <DollarSign className="w-6 h-6" />
+            </div>
+            <ArrowDownRight className="w-5 h-5 text-red-500" />
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">System Disbursed (All Time)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.disbursed / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection (This Month)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm group">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-amber-100 text-amber-600">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-1 rounded-full uppercase">Profit Target</div>
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest (This Month)</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-blue-100 text-blue-600">
+              <Clock className="w-6 h-6" />
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">My Pending Approvals</p>
+          <p className="text-3xl font-black text-gray-900 mt-1">{metrics.totalPending}</p>
+        </div>
+      </div>
 
       <div className="max-w-7xl mx-auto">
         <AnimatePresence mode="wait">
@@ -272,7 +406,7 @@ export function StaffDashboard() {
                         >
                           <option value="">Select returning client...</option>
                           {returningBorrowers.map(b => (
-                            <option key={b.borrowerName} value={b.borrowerName}>{b.borrowerName}</option>
+                            <option key={b.id || (b.userName || b.borrowerName)} value={b.userName || b.borrowerName}>{b.userName || b.borrowerName}</option>
                           ))}
                         </select>
                       ) : (
@@ -403,7 +537,7 @@ export function StaffDashboard() {
                           <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.appointmentLetter || isReturning ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
                             {formData.appointmentLetter || isReturning ? <ShieldCheck className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
                             <span className="text-[10px] font-black uppercase text-center px-4 leading-tight">
-                              {isReturning ? 'Employment Verified (Archived)' : (formData.appointmentLetter?.name || 'Appointment Letter')}
+                              {isReturning ? 'Appointment Letter Verified (Archived)' : (formData.appointmentLetter?.name || 'Appointment Letter (ONLY)')}
                             </span>
                           </div>
                         </label>
@@ -413,7 +547,7 @@ export function StaffDashboard() {
                           <div className={`h-40 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all ${formData.passportPhoto ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-primary/50'}`}>
                             {formData.passportPhoto ? <UserCheck className="w-8 h-8 text-primary mb-2" /> : <Upload className="w-8 h-8 text-gray-300 mb-2" />}
                             <span className="text-[10px] font-black uppercase text-center px-4 leading-tight">
-                              {formData.passportPhoto ? formData.passportPhoto.name : (isReturning ? 'Upload Passport for Sync' : 'Passport Photo')}
+                              {formData.passportPhoto ? formData.passportPhoto.name : (isReturning ? 'Re-Sync Passport Photo' : 'Passport Photo (ONLY)')}
                             </span>
                           </div>
                         </label>
@@ -473,112 +607,209 @@ export function StaffDashboard() {
         </AnimatePresence>
 
         {/* Loan History Reveal */}
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest flex items-center gap-3">
-              <HistoryIcon className="w-5 h-5 text-primary" />
-              Application Records
-            </h2>
-            <span className="text-[10px] font-black text-gray-400 uppercase bg-gray-100 px-3 py-1 rounded-full">{loans.length} Total</span>
-          </div>
+        {filterStatus === 'applications' ? (
+          <section className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest flex items-center gap-3">
+                <HistoryIcon className="w-5 h-5 text-primary" />
+                Application Records
+              </h2>
+              <span className="text-[10px] font-black text-gray-400 uppercase bg-gray-100 px-3 py-1 rounded-full">{loans.length} Total</span>
+            </div>
 
-          <div className="grid grid-cols-1 gap-6">
-            {loans.length === 0 ? (
-              <div className="bg-white rounded-3xl p-16 text-center border-2 border-dashed border-gray-100">
-                <FileText className="w-16 h-16 text-gray-100 mx-auto mb-4" />
-                <p className="text-gray-400 font-bold">No records found.</p>
-              </div>
-            ) : (
-              loans.map((loan, idx) => (
-                <motion.div
-                  key={loan.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  className="group bg-white rounded-[2.5rem] p-6 md:p-8 border border-gray-50 shadow-sm hover:shadow-2xl hover:border-primary/10 transition-all duration-500 relative overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 p-8 transform group-hover:scale-110 transition-transform duration-500 opacity-5">
-                    <TrendingUp className="w-32 h-32" />
-                  </div>
+            <div className="grid grid-cols-1 gap-6">
+              {loans.length === 0 ? (
+                <div className="bg-white rounded-3xl p-16 text-center border-2 border-dashed border-gray-100">
+                  <FileText className="w-16 h-16 text-gray-100 mx-auto mb-4" />
+                  <p className="text-gray-400 font-bold">No records found.</p>
+                </div>
+              ) : (
+                loans.map((loan, idx) => (
+                  <motion.div
+                    key={loan.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="group bg-white rounded-[2.5rem] p-6 md:p-8 border border-gray-50 shadow-sm hover:shadow-2xl hover:border-primary/10 transition-all duration-500 relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 p-8 transform group-hover:scale-110 transition-transform duration-500 opacity-5">
+                      <TrendingUp className="w-32 h-32" />
+                    </div>
 
-                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 relative z-10">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full animate-pulse ${loan.status === 'approved' || loan.status === 'disbursed' ? 'bg-emerald-500' : loan.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${loan.status === 'approved' || loan.status === 'disbursed' ? 'text-emerald-600' : loan.status === 'rejected' ? 'text-red-600' : 'text-amber-600'}`}>
-                          {loan.status}
-                        </span>
-                        <span className="text-[10px] text-gray-300 font-bold">•</span>
-                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">No: {idx + 1}</span>
-                        <span className="text-[10px] text-gray-300 font-bold">•</span>
-                        <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">ID: {loan.id?.slice(-6)}</span>
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 relative z-10">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full animate-pulse ${loan.status === 'approved' || loan.status === 'disbursed' ? 'bg-emerald-500' : loan.status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${loan.status === 'approved' || loan.status === 'disbursed' ? 'text-emerald-600' : loan.status === 'rejected' ? 'text-red-600' : 'text-amber-600'}`}>
+                            {loan.status}
+                          </span>
+                          <span className="text-[10px] text-gray-300 font-bold">•</span>
+                          <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">No: {idx + 1}</span>
+                          <span className="text-[10px] text-gray-300 font-bold">•</span>
+                          <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">ID: {loan.id?.slice(-6)}</span>
+                        </div>
+
+                        <div className="flex items-baseline gap-2">
+                          <h3 className="text-3xl font-black text-gray-900 tracking-tighter">{loan.userName || loan.borrowerName}</h3>
+                          <span className="text-sm font-bold text-primary">₦{loan.loanAmount.toLocaleString()}</span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <span className="bg-gray-50 text-gray-500 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2">
+                            <Calendar className="w-3 h-3" />
+                            {loan.loanTerm} Months
+                          </span>
+                          <span className="bg-gray-50 text-gray-500 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2">
+                            <TrendingUp className="w-3 h-3" />
+                            ₦{loan.monthlyEMI.toLocaleString()}/mo
+                          </span>
+                          {loan.repaymentType === 'salary_advance' && (
+                            <span className="bg-primary/5 text-primary px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider">Salary Advance Mode</span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-baseline gap-2">
-                        <h3 className="text-3xl font-black text-gray-900 tracking-tighter">{loan.borrowerName}</h3>
-                        <span className="text-sm font-bold text-primary">₦{loan.loanAmount.toLocaleString()}</span>
+                      <div className="flex flex-col items-end gap-3 text-right">
+                        <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
+                          <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Created On</p>
+                          <p className="text-sm font-bold text-gray-900">{typeof loan.createdAt === 'string' ? new Date(loan.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Pending'}</p>
+                        </div>
+                        <button
+                          onClick={() => setSelectedLoanForDetails(loan)}
+                          className="flex items-center gap-2 text-[10px] font-black text-primary hover:underline"
+                        >
+                          VIEW LEDGER <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
+                    </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <span className="bg-gray-50 text-gray-500 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2">
-                          <Calendar className="w-3 h-3" />
-                          {loan.loanTenure} Months
-                        </span>
-                        <span className="bg-gray-50 text-gray-500 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center gap-2">
-                          <TrendingUp className="w-3 h-3" />
-                          ₦{loan.monthlyEMI.toLocaleString()}/mo
-                        </span>
-                        {loan.repaymentType === 'salary_advance' && (
-                          <span className="bg-primary/5 text-primary px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider">Salary Advance Mode</span>
+                    {(loan.appointmentLetter || loan.passportPhoto) && (
+                      <div className="mt-6 flex gap-3">
+                        {loan.appointmentLetter && (
+                          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200">
+                            <FileText className="w-3 h-3 text-gray-400" />
+                            <span className="text-[9px] font-bold text-gray-600 uppercase">Offer Letter</span>
+                          </div>
+                        )}
+                        {loan.passportPhoto && (
+                          <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200">
+                            <UserCheck className="w-3 h-3 text-gray-400" />
+                            <span className="text-[9px] font-bold text-gray-600 uppercase">Passport</span>
+                          </div>
                         )}
                       </div>
-                    </div>
+                    )}
 
-                    <div className="flex flex-col items-end gap-3 text-right">
-                      <div className="bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
-                        <p className="text-[10px] text-gray-400 font-black uppercase mb-1">Created On</p>
-                        <p className="text-sm font-bold text-gray-900">{typeof loan.createdAt === 'string' ? new Date(loan.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'Pending'}</p>
-                      </div>
-                      <button
-                        onClick={() => setSelectedLoanForDetails(loan)}
-                        className="flex items-center gap-2 text-[10px] font-black text-primary hover:underline"
-                      >
-                        VIEW LEDGER <ChevronRight className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {loan.approvalReason && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-8 p-6 bg-red-50/50 border border-red-100 rounded-[2rem] flex gap-4">
+                        <AlertCircle className="w-6 h-6 text-red-500 shrink-0" />
+                        <div>
+                          <p className="text-xs font-black text-red-800 uppercase tracking-wider mb-1">Feedback</p>
+                          <p className="text-sm text-red-700 font-medium leading-relaxed">{loan.approvalReason}</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                ))
+              )}
+            </div>
+          </section>
+        ) : (
+          <section className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest flex items-center gap-3">
+                <Clock className="w-5 h-5 text-primary" />
+                Collection Queue
+              </h2>
+              <div className="relative group w-full md:w-96">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-primary transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search collections..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white border border-gray-100 rounded-xl focus:ring-4 focus:ring-primary/5 focus:border-primary outline-none transition-all text-xs font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-[2.5rem] border border-gray-50 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-50/50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest w-12">SN</th>
+                      <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Client</th>
+                      <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Due (This Month)</th>
+                      <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Repayment</th>
+                      <th className="px-8 py-6 text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                      <th className="px-8 py-6 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredCollection.map((loan, idx) => {
+                      const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) : new Date();
+                      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+                      const thisMonthDue = schedule.find(s => s.month === currentMonth && s.year === currentYear)?.total || 0;
+                      const totalWithInterest = schedule.reduce((sum, s) => sum + s.total, 0);
+
+                      return (
+                        <motion.tr
+                          key={loan.id}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: idx * 0.05 }}
+                          className="hover:bg-gray-50/50 transition-colors group"
+                        >
+                          <td className="px-8 py-6 text-[10px] font-black text-gray-300">{idx + 1}</td>
+                          <td className="px-8 py-6">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary font-bold">
+                                {(loan.userName || loan.borrowerName || 'U')[0].toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-gray-900">{loan.userName || loan.borrowerName}</p>
+                                <p className="text-[10px] text-gray-400 font-medium">By {(loan.email || loan.staffEmail || 'staff').split('@')[0]}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-6">
+                            <p className="text-sm font-black text-primary">₦{thisMonthDue.toLocaleString()}</p>
+                          </td>
+                          <td className="px-8 py-6">
+                            <p className="text-sm font-bold text-gray-600">₦{totalWithInterest.toLocaleString()}</p>
+                          </td>
+                          <td className="px-8 py-6">
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${loan.status === 'approved' || loan.status === 'disbursed' ? 'bg-emerald-50 text-emerald-600' :
+                              loan.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+                              }`}>
+                              {loan.status}
+                            </span>
+                          </td>
+                          <td className="px-8 py-6">
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={() => setSelectedLoanForDetails(loan)} className="p-2 hover:bg-white rounded-lg transition-all border border-transparent hover:border-gray-100 hover:shadow-sm">
+                                <Eye className="w-4 h-4 text-gray-400" />
+                              </button>
+                            </div>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {filteredCollection.length === 0 && (
+                <div className="p-20 text-center">
+                  <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-10 h-10 text-gray-200" />
                   </div>
-
-                  {(loan.appointmentLetter || loan.passportPhoto) && (
-                    <div className="mt-6 flex gap-3">
-                      {loan.appointmentLetter && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200">
-                          <FileText className="w-3 h-3 text-gray-400" />
-                          <span className="text-[9px] font-bold text-gray-600 uppercase">Offer Letter</span>
-                        </div>
-                      )}
-                      {loan.passportPhoto && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl border border-gray-200">
-                          <UserCheck className="w-3 h-3 text-gray-400" />
-                          <span className="text-[9px] font-bold text-gray-600 uppercase">Passport</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {loan.approvalReason && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-8 p-6 bg-red-50/50 border border-red-100 rounded-[2rem] flex gap-4">
-                      <AlertCircle className="w-6 h-6 text-red-500 shrink-0" />
-                      <div>
-                        <p className="text-xs font-black text-red-800 uppercase tracking-wider mb-1">Feedback</p>
-                        <p className="text-sm text-red-700 font-medium leading-relaxed">{loan.approvalReason}</p>
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              ))
-            )}
-          </div>
-        </section>
+                  <p className="text-gray-400 font-bold">No collections due this month</p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Detailed Spreadsheet Modal */}
@@ -614,7 +845,7 @@ export function StaffDashboard() {
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                       <p className="text-[10px] text-primary font-black uppercase mb-2">Total Carry Amount</p>
                       <p className="text-3xl font-black text-gray-900">
-                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTenure, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
+                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
                       </p>
                       <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Status: {['approved', 'disbursed'].includes(selectedLoanForDetails.status) ? 'Still Paying' : 'Pending Verification'}</p>
                     </div>
@@ -638,15 +869,47 @@ export function StaffDashboard() {
                     <div className="space-y-4">
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Verification Status</h4>
                       <div className="grid grid-cols-1 gap-2">
-                        {selectedLoanForDetails.appointmentLetter && (
-                          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
                             <CheckCircle className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs font-bold text-gray-700">Emp. Letter Verified</span>
+                            <span className="text-xs font-bold text-gray-700">Appointment Letter</span>
                           </div>
-                        )}
-                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                          <CheckCircle className="w-4 h-4 text-emerald-500" />
-                          <span className="text-xs font-bold text-gray-700">Bio-Match Confirmed</span>
+                          {selectedLoanForDetails.appointmentLetter ? (
+                            <div className="aspect-[4/3] w-full bg-white rounded-xl border border-gray-200 overflow-hidden relative group">
+                              <img
+                                src="https://images.unsplash.com/photo-1586281380349-632531db7ed4?q=80&w=2070&auto=format&fit=crop"
+                                alt="Appointment Letter"
+                                className="w-full h-full object-cover opacity-50 grayscale hover:grayscale-0 transition-all cursor-zoom-in"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/5 group-hover:bg-transparent transition-colors">
+                                <span className="text-[8px] font-black uppercase text-gray-500 bg-white/80 px-2 py-1 rounded">Document ID: verified</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-gray-400 italic">No document archived</div>
+                          )}
+                        </div>
+
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col gap-3">
+                          <div className="flex items-center gap-3">
+                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                            <span className="text-xs font-bold text-gray-700">Passport Identity</span>
+                          </div>
+                          {selectedLoanForDetails.passportPhoto ? (
+                            <div className="aspect-square w-full bg-white rounded-xl border border-gray-200 overflow-hidden relative group">
+                              <img
+                                src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=1976&auto=format&fit=crop"
+                                alt="Passport Photo"
+                                className="w-full h-full object-cover hover:scale-110 transition-transform duration-500 cursor-zoom-in"
+                              />
+                              <div className="absolute top-2 right-2 flex gap-1">
+                                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                <div className="text-[7px] font-black text-emerald-600 bg-white/90 px-1 rounded uppercase">Bio Match</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-gray-400 italic">No identity photo</div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -668,7 +931,7 @@ export function StaffDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTenure, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).map((step, i) => (
+                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, new Date(typeof selectedLoanForDetails.createdAt === 'string' ? selectedLoanForDetails.createdAt : Date.now()), selectedLoanForDetails.monthlyIncome, settings).map((step, i) => (
                             <tr key={i} className="hover:bg-white transition-colors">
                               <td className="px-6 py-4 text-gray-400 font-black">{i + 1}</td>
                               <td className="px-6 py-4 font-medium">{new Date(step.year, step.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>

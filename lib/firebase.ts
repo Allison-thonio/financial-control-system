@@ -1,49 +1,36 @@
 import { initializeApp, FirebaseApp, getApps, getApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
-
-// Check if we have real Firebase credentials
-const hasRealFirebaseConfig = !!(
-  process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-  process.env.NEXT_PUBLIC_FIREBASE_API_KEY !== 'demo-api-key' &&
-  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
-  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== 'demo-project'
-);
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'demo-api-key',
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'demo-project.firebaseapp.com',
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'demo-project',
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'demo-project.appspot.com',
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '123456789',
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:123456789:web:abcdefghijklmnop',
+  apiKey: "AIzaSyAhkbpm6_G85vr-PVw0yNgzz6qL0_BJ6Rs",
+  authDomain: "loan-app-2ebbc.firebaseapp.com",
+  projectId: "loan-app-2ebbc",
+  storageBucket: "loan-app-2ebbc.firebasestorage.app",
+  messagingSenderId: "266635671844",
+  appId: "1:266635671844:web:68cf612ec33b82c5a99bb1",
+  measurementId: "G-SRNZFQW87K"
 };
 
-let app: FirebaseApp | null = null;
-let auth: Auth | null = null;
-let db: Firestore | null = null;
-export const isFirebaseInitialized = hasRealFirebaseConfig;
-
-try {
-  // Only initialize Firebase if we have real credentials
-  if (hasRealFirebaseConfig) {
-    const existingApps = getApps();
-    if (existingApps.length > 0) {
-      app = getApp();
-    } else {
-      app = initializeApp(firebaseConfig);
-    }
-    auth = getAuth(app);
-    db = getFirestore(app);
-  } else {
-    console.log('[Firebase] Demo mode: Firebase not initialized. Using mock authentication.');
-  }
-} catch (error) {
-  console.error('[Firebase] Initialization error:', error);
-  app = null;
-  auth = null;
-  db = null;
+let app: FirebaseApp;
+if (getApps().length === 0) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApp();
 }
 
-export { auth, db };
+const auth: Auth = getAuth(app);
+const db: Firestore = getFirestore(app);
+const storage: FirebaseStorage = getStorage(app);
+
+// Check if we are in the browser for analytics
+let analytics = null;
+if (typeof window !== 'undefined') {
+  const { getAnalytics } = require('firebase/analytics');
+  analytics = getAnalytics(app);
+}
+
+export { auth, db, storage, analytics };
 export default app;
+

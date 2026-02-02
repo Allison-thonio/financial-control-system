@@ -3,7 +3,7 @@
 import React from "react"
 
 import { useState } from 'react';
-import { createLoanApplication } from '@/lib/db';
+import { createLoanApplication, uploadFile } from '@/lib/db';
 import { Timestamp } from 'firebase/firestore';
 
 interface LoanApplicationFormProps {
@@ -27,6 +27,8 @@ export default function LoanApplicationForm({
   const [interestRate, setInterestRate] = useState(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [appointmentLetter, setAppointmentLetter] = useState<File | null>(null);
+  const [passportPhoto, setPassportPhoto] = useState<File | null>(null);
 
   const maxLoan = monthlyIncome * 20;
   const monthlyRate = interestRate / 100 / 12;
@@ -34,7 +36,7 @@ export default function LoanApplicationForm({
     loanAmount === 0
       ? 0
       : (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) /
-        (Math.pow(1 + monthlyRate, loanTerm) - 1);
+      (Math.pow(1 + monthlyRate, loanTerm) - 1);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +56,17 @@ export default function LoanApplicationForm({
         return;
       }
 
+      let appointmentLetterUrl = '';
+      let passportPhotoUrl = '';
+
+      if (appointmentLetter) {
+        appointmentLetterUrl = await uploadFile(appointmentLetter, `documents/${userId}/appointment_letter_${Date.now()}`);
+      }
+
+      if (passportPhoto) {
+        passportPhotoUrl = await uploadFile(passportPhoto, `documents/${userId}/passport_photo_${Date.now()}`);
+      }
+
       await createLoanApplication({
         userId,
         userName,
@@ -63,7 +76,10 @@ export default function LoanApplicationForm({
         loanTerm,
         monthlyIncome,
         interestRate,
+        monthlyEMI: emi,
         status: 'pending',
+        appointmentLetter: appointmentLetterUrl,
+        passportPhoto: passportPhotoUrl,
       });
 
       onSuccess();
@@ -141,6 +157,28 @@ export default function LoanApplicationForm({
             rows={4}
             placeholder="Explain why you need this loan..."
           />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Appointment Letter (PDF/Image)</label>
+            <input
+              type="file"
+              onChange={(e) => setAppointmentLetter(e.target.files?.[0] || null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              accept=".pdf,image/*"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Passport Photo (Image)</label>
+            <input
+              type="file"
+              onChange={(e) => setPassportPhoto(e.target.files?.[0] || null)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              accept="image/*"
+            />
+          </div>
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">

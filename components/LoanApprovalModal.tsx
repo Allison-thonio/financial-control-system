@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { LoanApplication, updateLoanStatus } from '@/lib/db';
+import { LoanApp, updateLoanStatus } from '@/lib/db';
 
 interface LoanApprovalModalProps {
-  loan: LoanApplication;
+  loan: LoanApp;
   managerName: string;
   onClose: () => void;
   onApproval: () => void;
@@ -25,7 +25,7 @@ export default function LoanApprovalModal({
     setLoading(true);
     try {
       if (!loan.id) throw new Error('Loan ID not found');
-      await updateLoanStatus(loan.id, 'approved', managerName);
+      await updateLoanStatus(loan.id, 'approved', `Approved by ${managerName}`);
       onApproval();
       onClose();
     } catch (err) {
@@ -44,7 +44,7 @@ export default function LoanApprovalModal({
     setLoading(true);
     try {
       if (!loan.id) throw new Error('Loan ID not found');
-      await updateLoanStatus(loan.id, 'rejected', managerName, rejectionReason.trim());
+      await updateLoanStatus(loan.id, 'rejected', `Rejected by ${managerName}: ${rejectionReason.trim()}`);
       onApproval();
       onClose();
     } catch (err) {
@@ -76,11 +76,11 @@ export default function LoanApprovalModal({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-600">Applicant Name</p>
-                  <p className="text-lg font-semibold">{loan.userName}</p>
+                  <p className="text-lg font-semibold">{loan.userName || loan.borrowerName}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Email</p>
-                  <p className="text-lg font-semibold">{loan.email}</p>
+                  <p className="text-lg font-semibold">{loan.email || loan.staffEmail}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Loan Amount</p>
@@ -127,7 +127,7 @@ export default function LoanApprovalModal({
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <p className="text-green-800 font-semibold">Confirm Approval?</p>
                 <p className="text-green-700 text-sm mt-2">
-                  You are about to approve a loan of ₹{loan.loanAmount.toLocaleString()} for {loan.userName}.
+                  You are about to approve a loan of ₹{loan.loanAmount.toLocaleString()} for {loan.userName || loan.borrowerName}.
                 </p>
               </div>
               <div className="flex gap-3">

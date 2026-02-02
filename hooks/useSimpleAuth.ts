@@ -19,7 +19,7 @@ export function useSimpleAuth() {
         const auth = JSON.parse(authStr) as AuthUser;
         setUser(auth);
       } catch (err) {
-        console.error('[v0] Failed to parse auth:', err);
+        console.error('[Auth] Failed to parse auth:', err);
       }
     }
     setLoading(false);

@@ -11,7 +11,6 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const metadata: Metadata = {
   title: 'Employee Loan Management System',
   description: 'Manage employee loans with salary verification and approval workflows',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
