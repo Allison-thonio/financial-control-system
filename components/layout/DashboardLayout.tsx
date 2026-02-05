@@ -19,14 +19,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <ProtectedRoute>
-            <div className="flex min-h-screen bg-[#F8FAFC]">
+            <div className="flex min-h-screen bg-[#F8FAFC] overflow-x-hidden">
                 {/* Desktop Sidebar (Fixed) */}
                 <div className="hidden lg:block h-screen fixed left-0 top-0 z-50">
                     <Sidebar role={role as 'manager' | 'staff'} />
                 </div>
 
                 {/* Mobile Header */}
-                <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-gray-100 z-40 px-6 flex items-center justify-between shadow-sm">
+                <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 backdrop-blur-md border-b border-gray-100 z-40 px-4 sm:px-6 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
                             <span className="text-white font-black text-xs italic">LS</span>
@@ -77,6 +77,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <main className={`
                     flex-1 min-h-screen pt-16 lg:pt-0 
                     lg:pl-[88px] transition-all duration-300
+                    overflow-x-hidden w-full
                 `}>
                     {/* Top Top bar for Desktop */}
                     <div className="hidden lg:flex h-20 px-10 items-center justify-end gap-6 bg-white/50 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-30">
@@ -99,7 +100,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-                        className="max-w-[1400px] mx-auto p-6 md:p-10 lg:p-12"
+                        className="max-w-[1400px] mx-auto p-4 sm:p-6 md:p-10 lg:p-12 overflow-x-hidden pb-20 sm:pb-12"
                     >
                         {children}
                     </motion.div>

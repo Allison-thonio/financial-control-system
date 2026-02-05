@@ -66,8 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Safety timeout to prevent perpetual loading
     const safetyTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 15000);
+      if (loading) {
+        console.warn('[Auth] Safety timeout reached (4s), forcing loading to false');
+        setLoading(false);
+      }
+    }, 4000); // Reduced to 4 seconds for snappier fallback
 
     // Check if auth is properly initialized (null auth means demo mode)
     console.log('[System] AuthProvider initializing - auth:', auth, 'db:', db);

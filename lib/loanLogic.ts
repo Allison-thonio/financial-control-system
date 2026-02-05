@@ -70,18 +70,38 @@ export function calculateLoanCapacity(
   targetTenure: number = 3,
   settings: SystemSettings = DEFAULT_SETTINGS
 ): LoanCapacity {
-  const totalCapacity = monthlySalary * settings.salaryCapMultiplier;
-  const availableRepaymentCapacity = Math.max(0, totalCapacity - currentOutstandingRepayment);
+  // SALARY ADVANCE SPECIAL LOGIC:
+  // If tenure is short (<= 3 months) and it's a "Salary Take" scenario, 
+  // we allow up to 90% of the total paycheck over that period to be used.
+
+  const isShortTermSalaryTake = targetTenure <= 3;
+  const dtiLimit = isShortTermSalaryTake ? 0.90 : 0.40;
+
+  const monthlyRepaymentLimit = monthlySalary * dtiLimit;
+
+  // Total repayment buffer available over the target tenure
+  const totalRepaymentBuffer = (monthlyRepaymentLimit * targetTenure) - currentOutstandingRepayment;
+  const safeTotalRepayment = Math.max(0, totalRepaymentBuffer);
 
   const r = settings.interestRate;
   let maxPrincipal = 0;
-  if (targetTenure <= 12) {
-    maxPrincipal = availableRepaymentCapacity / (1 + (r * targetTenure));
+
+  if (isShortTermSalaryTake) {
+    // Salary advance has special interest: 0% month 1, 20% on remaining in month 2.
+    // Let's approximate effective interest at 20% of roughly half the principal.
+    // P + (P - Salary)*0.2 = TotalRepayment
+    // P + 0.2P - 0.2Salary = TotalRepayment
+    // 1.2P = TotalRepayment + 0.2Salary
+    // P = (TotalRepayment + 0.2*monthlySalary) / 1.2
+    maxPrincipal = (safeTotalRepayment + (0.2 * monthlySalary)) / 1.2;
   } else {
-    const n = targetTenure;
-    const factor = (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1) * n;
-    maxPrincipal = availableRepaymentCapacity / factor;
+    // Standard Simple Interest: P = TotalRepayment / (1 + r * tenure)
+    maxPrincipal = safeTotalRepayment / (1 + (r * targetTenure));
   }
+
+  // Also respect the hard Salary Cap Multiplier as a ceiling
+  const capCeiling = monthlySalary * settings.salaryCapMultiplier;
+  maxPrincipal = Math.min(maxPrincipal, capCeiling);
 
   const calculation = calculateTotalRepayment(maxPrincipal, targetTenure, monthlySalary, settings);
 
@@ -89,7 +109,7 @@ export function calculateLoanCapacity(
     maxPrincipal: Math.floor(maxPrincipal),
     totalRepaymentWithInterest: Math.floor(calculation.total),
     monthlyRepayment: Math.floor(calculation.total / targetTenure),
-    remainingCapacity: Math.floor(availableRepaymentCapacity),
+    remainingCapacity: Math.floor(monthlyRepaymentLimit),
   };
 }
 
@@ -108,34 +128,44 @@ export function getDetailedRepaymentSchedule(
   const isSalaryTakeLogic = monthlySalary > 0 && principal > monthlySalary && tenureMonths <= 12;
 
   if (isSalaryTakeLogic) {
-    let accumulatedInterest = 0;
-
     for (let i = 1; i <= tenureMonths; i++) {
       const dueDate = new Date(startDate);
-      dueDate.setMonth(startDate.getMonth() + i);
+      dueDate.setMonth(startDate.getUTCMonth() + i);
 
       let principalPaid = 0;
       let interestPaid = 0;
 
       if (i === 1) {
-        // Month 1: Take entire salary as principal
+        // Month 1: Take ENTIRE salary as principal. Interest is 0.
         principalPaid = Math.min(monthlySalary, remainingPrincipal);
         interestPaid = 0;
-        accumulatedInterest += principal * r; // Interest for month 1 rolls over
       } else if (i === 2) {
-        // Month 2: Take 20% interest + remaining or installment
-        interestPaid = accumulatedInterest + (principal * r);
-        accumulatedInterest = 0;
-        // Remaining principal divided by remaining tenure
-        principalPaid = remainingPrincipal / (tenureMonths - 1);
+        // Month 2: Charge 20% interest on what was left after Month 1
+        // remainingPrincipal at this point is precisely what was left.
+        interestPaid = remainingPrincipal * 0.20;
+
+        // Take as much principal as possible, or all if it's the last month.
+        if (i === tenureMonths) {
+          principalPaid = remainingPrincipal;
+        } else {
+          principalPaid = Math.min(monthlySalary - interestPaid, remainingPrincipal);
+        }
       } else {
-        // Subsequent months: 10% interest + principal installment
-        interestPaid = principal * r;
-        principalPaid = remainingPrincipal / (tenureMonths - (i - 1));
+        // Month 3 and beyond: Fallback to standard 10% interest
+        interestPaid = remainingPrincipal * r;
+        if (i === tenureMonths) {
+          principalPaid = remainingPrincipal;
+        } else {
+          principalPaid = Math.min(monthlySalary - interestPaid, remainingPrincipal);
+        }
+      }
+
+      // Final month safety
+      if (i === tenureMonths) {
+        principalPaid = remainingPrincipal;
       }
 
       remainingPrincipal -= principalPaid;
-      if (i === tenureMonths) remainingPrincipal = 0;
 
       schedule.push({
         month: dueDate.getMonth(),

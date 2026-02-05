@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getSystemSettings, updateSystemSettings, createAuditLog, getAuditLogs } from '@/lib/db';
+import { db } from '@/lib/firebase';
 
 export interface AuditLog {
     id: string;
@@ -37,34 +38,38 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const fetchInitialData = async () => {
-            const [dbSettings, dbLogs] = await Promise.all([
-                getSystemSettings(),
-                getAuditLogs(100)
-            ]);
+            try {
+                const [dbSettings, dbLogs] = await Promise.all([
+                    getSystemSettings(),
+                    getAuditLogs(100)
+                ]);
 
-            if (dbSettings) {
-                setSettings({
-                    interestRate: dbSettings.interestRate,
-                    maxTenure: dbSettings.maxTenure,
-                    salaryCapMultiplier: dbSettings.salaryCapMultiplier
-                });
-            } else {
-                // Initialize settings if they don't exist
-                await updateSystemSettings({
-                    interestRate: 0.1,
-                    maxTenure: 12,
-                    salaryCapMultiplier: 3
-                });
-            }
+                if (dbSettings) {
+                    setSettings({
+                        interestRate: dbSettings.interestRate,
+                        maxTenure: dbSettings.maxTenure,
+                        salaryCapMultiplier: dbSettings.salaryCapMultiplier
+                    });
+                } else if (db) {
+                    // Initialize settings if they don't exist, but only if db is available
+                    await updateSystemSettings({
+                        interestRate: 0.1,
+                        maxTenure: 12,
+                        salaryCapMultiplier: 3
+                    });
+                }
 
-            if (dbLogs) {
-                setAuditLogs(dbLogs.map(log => ({
-                    id: log.id!,
-                    action: log.action,
-                    user: log.user,
-                    details: log.details,
-                    timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : (typeof log.timestamp?.toDate === 'function' ? log.timestamp.toDate().toISOString() : log.timestamp)
-                })));
+                if (dbLogs) {
+                    setAuditLogs(dbLogs.map(log => ({
+                        id: log.id!,
+                        action: log.action,
+                        user: log.user,
+                        details: log.details,
+                        timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : (typeof log.timestamp?.toDate === 'function' ? log.timestamp.toDate().toISOString() : log.timestamp)
+                    })));
+                }
+            } catch (error) {
+                console.error('[SystemContext] Failed to fetch initial data:', error);
             }
         };
 

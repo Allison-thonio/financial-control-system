@@ -20,13 +20,19 @@ import {
   ChevronRight,
   Search,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Plus,
+  Info,
+  BrainCircuit,
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDetailedRepaymentSchedule } from '@/lib/loanLogic';
 import { useSystem } from '@/contexts/SystemContext';
 import { LoanApp, getAllLoans, updateLoanStatus } from '@/lib/db';
+import { ManagerApplicationForm } from './ManagerApplicationForm';
 
 export function ManagerDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -41,6 +47,9 @@ export function ManagerDashboard() {
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [approvalData, setApprovalData] = useState({ approved: false, reason: '' });
+
+  // Application Form State
+  const [showForm, setShowForm] = useState(false);
 
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
@@ -65,7 +74,7 @@ export function ManagerDashboard() {
         return Promise.race([promise, timeout]);
       };
 
-      const allLoans = await withTimeout(getAllLoans(), 10000, []);
+      const allLoans = await withTimeout(getAllLoans(), 5000, []);
       setLoans(allLoans);
     } catch (error) {
       console.error('Failed to fetch loans:', error);
@@ -172,7 +181,7 @@ export function ManagerDashboard() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 overflow-x-hidden">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">
@@ -181,64 +190,88 @@ export function ManagerDashboard() {
           <p className="text-sm text-gray-500 font-medium">Control center for loan approvals and profit tracking</p>
         </div>
 
-        <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
-          {(['all', 'pending', 'collection'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
-                }`}
-            >
-              {s === 'collection' ? 'Collection Queue' : s}
-            </button>
-          ))}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+            {(['all', 'pending', 'collection'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 sm:px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
+                  }`}
+              >
+                {s === 'collection' ? 'Collection Queue' : s}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-4 bg-primary text-white rounded-2xl hover:shadow-xl hover:shadow-primary/30 transition-all font-bold active:scale-95 whitespace-nowrap"
+          >
+            <Plus className="w-5 h-5" />
+            New Application
+          </button>
         </div>
       </header>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-              <DollarSign className="w-6 h-6" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-primary/10 text-primary">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <ArrowDownRight className="w-5 h-5 text-red-500" />
+            <ArrowDownRight className="w-4 h-4 sm:w-5 sm:h-5 text-red-500" />
           </div>
           <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Disbursed (All Time)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.disbursed / 1000).toFixed(1)}k</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">₦{(metrics.disbursed / 1000).toFixed(1)}k</p>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-600">
-              <TrendingUp className="w-6 h-6" />
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-100 text-emerald-600">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+            <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
           </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection (This Month)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-amber-100 text-amber-600">
-              <TrendingUp className="w-6 h-6" />
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm group">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-amber-100 text-amber-600">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-1 rounded-full uppercase">Profit Target</div>
+            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-0.5 sm:py-1 rounded-full uppercase">Profit Target</div>
           </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest (This Month)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-blue-100 text-blue-600">
-              <Clock className="w-6 h-6" />
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-blue-100 text-blue-600">
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
           </div>
           <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Pending Approvals</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">{metrics.totalPending}</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">{metrics.totalPending}</p>
         </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto">
+        <AnimatePresence mode="wait">
+          {showForm && (
+            <ManagerApplicationForm
+              onSuccess={() => {
+                fetchLoans();
+                setShowForm(false);
+              }}
+              onClose={() => setShowForm(false)}
+              existingLoans={loans}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4">
@@ -363,7 +396,7 @@ export function ManagerDashboard() {
                 <header className="flex justify-between items-start">
                   <div>
                     <h2 className="text-3xl font-black text-gray-900 tracking-tight">Client <span className="text-primary italic">Spreadsheet</span></h2>
-                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Client: {selectedLoan.borrowerName}</p>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Client: {selectedLoan.userName || selectedLoan.borrowerName}</p>
                   </div>
                   <button onClick={() => setShowDetailsModal(false)} className="p-3 hover:bg-gray-100 rounded-full transition-colors">
                     <XCircle className="w-8 h-8 text-gray-300" />
@@ -384,7 +417,11 @@ export function ManagerDashboard() {
                       <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Client Identity</h4>
                       <div className="relative aspect-square rounded-[2rem] overflow-hidden border border-gray-100 bg-gray-50 flex items-center justify-center">
                         {selectedLoan.passportPhoto ? (
-                          <div className="text-primary font-black text-xl">PASSPORT PHOTO</div>
+                          <img
+                            src={selectedLoan.passportPhoto}
+                            alt="Identity"
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <div className="text-gray-300 italic text-xs">No Photo</div>
                         )}

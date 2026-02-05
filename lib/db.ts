@@ -135,19 +135,28 @@ export async function createLoanApplication(loanData: Omit<LoanApp, 'id' | 'crea
   }
 }
 
+
+
 export async function getLoansByStaff(staffEmail: string): Promise<LoanApp[]> {
   if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
-    const q = query(loansRef, where('staffEmail', '==', staffEmail), orderBy('createdAt', 'desc'));
+    const q = query(loansRef, where('email', '==', staffEmail));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => {
+    const results = querySnapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
         ...data,
         createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt,
       } as LoanApp;
+    });
+
+    // In-memory sort to avoid composite index requirement
+    return results.sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
     });
   } catch (error) {
     console.error('Error getting staff loans:', error);
@@ -159,15 +168,22 @@ export async function getAllLoans(): Promise<LoanApp[]> {
   if (!db) return [];
   try {
     const loansRef = collection(db, 'loans');
-    const q = query(loansRef, orderBy('createdAt', 'desc'));
+    const q = query(loansRef);
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map((doc) => {
+    const results = querySnapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
         ...data,
         createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString().split('T')[0] : data.createdAt,
       } as LoanApp;
+    });
+
+    // In-memory sort to avoid composite index requirement
+    return results.sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
     });
   } catch (error) {
     console.error('Error getting all loans:', error);
@@ -257,12 +273,19 @@ export async function getAuditLogs(limitCount = 100): Promise<AuditLog[]> {
   if (!db) return [];
   try {
     const logsRef = collection(db, 'auditLogs');
-    const q = query(logsRef, orderBy('timestamp', 'desc'));
+    const q = query(logsRef);
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.slice(0, limitCount).map(doc => ({
+    const results = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as AuditLog));
+
+    // Sort in memory by timestamp desc
+    return results.sort((a, b) => {
+      const timeA = a.timestamp instanceof Timestamp ? a.timestamp.toMillis() : (a.timestamp ? new Date(a.timestamp).getTime() : 0);
+      const timeB = b.timestamp instanceof Timestamp ? b.timestamp.toMillis() : (b.timestamp ? new Date(b.timestamp).getTime() : 0);
+      return timeB - timeA;
+    }).slice(0, limitCount);
   } catch (error) {
     console.error('Error getting audit logs:', error);
     return [];
@@ -369,9 +392,15 @@ export async function uploadFile(file: File, path: string): Promise<string> {
     const snapshot = await uploadBytes(storageRef, file);
     const downloadURL = await getDownloadURL(snapshot.ref);
     return downloadURL;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error uploading file:', error);
-    throw error;
+    if (error.code === 'storage/retry-limit-exceeded') {
+      throw new Error('UPLOAD_TIMEOUT: The connection to Firebase Storage timed out. This usually happens if your internet is unstable or if Firebase Storage is not yet activated in your console.');
+    }
+    if (error.code === 'storage/unauthorized') {
+      throw new Error('UPLOAD_UNAUTHORIZED: Your Firebase Storage rules are preventing the document upload. Please check your security rules.');
+    }
+    throw new Error(`UPLOAD_ERROR: ${error.message || 'An unknown error occurred during upload.'}`);
   }
 }
 

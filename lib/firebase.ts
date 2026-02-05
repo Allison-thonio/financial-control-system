@@ -1,6 +1,6 @@
 import { initializeApp, FirebaseApp, getApps, getApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -24,12 +24,24 @@ try {
   } else {
     app = getApp();
   }
+
   auth = getAuth(app);
-  db = getFirestore(app);
+
+  // Initialize Firestore with settings for better connectivity
+  if (typeof window !== 'undefined') {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      }),
+      experimentalForceLongPolling: true
+    });
+  } else {
+    db = getFirestore(app);
+  }
+
   storage = getStorage(app);
 } catch (error) {
   console.error("Firebase initialization failed:", error);
-  // These will be caught by AuthContext's demo mode check
 }
 
 export { auth, db, storage };

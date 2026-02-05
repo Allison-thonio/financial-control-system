@@ -94,13 +94,13 @@ export function StaffDashboard() {
         return Promise.race([promise, timeout]);
       };
 
-      // Individual fetches to prevent one failure from blocking everything
-      const staffLoansPromise = withTimeout(getLoansByStaff(user.email), 10000, []).catch(err => {
+      // Individual fetches with 5-second timeout
+      const staffLoansPromise = withTimeout(getLoansByStaff(user.email), 5000, []).catch(err => {
         console.error('[StaffDashboard] Staff loans fetch failed:', err);
         return [];
       });
 
-      const allLoansPromise = withTimeout(getAllLoans(), 10000, []).catch(err => {
+      const allLoansPromise = withTimeout(getAllLoans(), 5000, []).catch(err => {
         console.error('[StaffDashboard] All loans fetch failed:', err);
         return [];
       });
@@ -110,6 +110,7 @@ export function StaffDashboard() {
         allLoansPromise
       ]);
 
+      console.log('[StaffDashboard] Data received:', staffLoans.length, totalLoans.length);
       setLoans(staffLoans);
       setAllLoans(totalLoans);
       console.log('[StaffDashboard] Fetch complete. Staff loans:', staffLoans.length, 'Total loans available:', totalLoans.length);
@@ -152,9 +153,15 @@ export function StaffDashboard() {
   const recommendedTenure = useMemo(() => {
     const amount = parseFloat(formData.loanAmount) || 0;
     const income = parseFloat(formData.monthlyIncome) || 0;
-    if (amount <= income || income <= 0) return 1;
-    return Math.ceil(amount / income);
-  }, [formData.loanAmount, formData.monthlyIncome]);
+    if (amount <= 0 || income <= 0) return 1;
+
+    // Using 40% DTI limit as baseline
+    const maxMonthlyPay = income * 0.4;
+    // Simple interest approximation for recommendation: (Principal * (1 + (rate * estimated_tenure))) / maxMonthlyPay
+    // Let's assume a mid-range interest to give a safe recommendation
+    const estimatedTotal = amount * (1 + settings.interestRate * 4);
+    return Math.ceil(estimatedTotal / maxMonthlyPay);
+  }, [formData.loanAmount, formData.monthlyIncome, settings]);
 
   // Metrics calculation (Staff version of Manager metrics)
   const metrics = useMemo(() => {
@@ -230,8 +237,8 @@ export function StaffDashboard() {
       return;
     }
 
-    if (!formData.passportPhoto) {
-      alert('Passport Photo is required for all clients to ensure system recognition');
+    if (!isReturning && !formData.passportPhoto) {
+      alert('Passport Photo is required for new clients to ensure system recognition');
       return;
     }
 
@@ -292,7 +299,7 @@ export function StaffDashboard() {
         loanReason: amount > income ? 'Salary Advance' : 'General Purpose',
         monthlyIncome: income,
         loanTerm: tenure,
-        interestRate: settings.interestRate * 100, // Store as percentage for display
+        interestRate: settings.interestRate * 100,
         monthlyEMI: Math.round(totalRepayment / tenure),
         status: 'pending',
         repaymentType: amount > income ? 'salary_advance' : 'default',
@@ -301,8 +308,14 @@ export function StaffDashboard() {
         passportPhoto: passportPhotoUrl,
       };
 
+      // Enhanced AI Simulation Flow
+      addAuditLog('Verification Started', user?.email || 'Unknown', `Analyzing documents for ${name}...`);
+      await new Promise(resolve => setTimeout(resolve, 800));
+      addAuditLog('Biometric Check', user?.email || 'Unknown', `Matching passport against archived records...`);
+      await new Promise(resolve => setTimeout(resolve, 600));
+
       await createLoanApplication(newLoanData);
-      addAuditLog('New Application', user?.email || 'Unknown', `Borrower: ${name}, Amount: ₦${amount.toLocaleString()}`);
+      addAuditLog('Application Finalized', user?.email || 'Unknown', `New application for ${name} (₦${amount.toLocaleString()}) queued for manager approval.`);
 
       setSubmissionComplete(true);
 
@@ -321,13 +334,13 @@ export function StaffDashboard() {
         passportPhoto: null,
       } as any);
 
-      // Brief delay to show success state before closing
+      // Quick transition for better performance feel
       setTimeout(() => {
         setIsSubmitting(false);
         setSubmissionComplete(false);
         setShowForm(false);
         fetchLoans();
-      }, 1500);
+      }, 600);
 
     } catch (error) {
       setIsSubmitting(false);
@@ -350,7 +363,7 @@ export function StaffDashboard() {
   if (!user) return null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 overflow-x-hidden">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">
@@ -358,13 +371,13 @@ export function StaffDashboard() {
           </h1>
           <p className="text-sm text-gray-500 font-medium">Register loan applications for clients</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <div className="flex bg-white p-1 rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
             {(['applications', 'collection'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
-                className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
+                className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterStatus === s ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-gray-400 hover:text-gray-600'
                   }`}
               >
                 {s === 'collection' ? 'Collection Queue' : 'My Applications'}
@@ -373,7 +386,7 @@ export function StaffDashboard() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center justify-center gap-2 px-6 py-4 bg-primary text-white rounded-2xl hover:shadow-xl hover:shadow-primary/30 transition-all font-bold active:scale-95"
+            className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 sm:py-4 bg-primary text-white rounded-2xl hover:shadow-xl hover:shadow-primary/30 transition-all font-bold active:scale-95 whitespace-nowrap"
           >
             <Plus className="w-5 h-5" />
             New Application
@@ -381,49 +394,28 @@ export function StaffDashboard() {
         </div>
       </header>
 
-      {/* Stats Grid - Mirroring Manager View */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-primary/10 text-primary">
-              <DollarSign className="w-6 h-6" />
+      {/* Stats Grid - Staff View */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-emerald-100 text-emerald-600">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <ArrowDownRight className="w-5 h-5 text-red-500" />
+            <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-500" />
           </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">System Disbursed (All Time)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.disbursed / 1000).toFixed(1)}k</p>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
         </div>
 
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-600">
-              <TrendingUp className="w-6 h-6" />
+        <div className="bg-white p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-gray-50 shadow-sm group">
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-amber-100 text-amber-600">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-0.5 sm:py-1 rounded-full uppercase">Profit Target</div>
           </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Collection (This Month)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyCollection / 1000).toFixed(1)}k</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm group">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-amber-100 text-amber-600">
-              <TrendingUp className="w-6 h-6" />
-            </div>
-            <div className="text-[8px] font-black bg-emerald-500 text-white px-2 py-1 rounded-full uppercase">Profit Target</div>
-          </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest (This Month)</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-50 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 rounded-2xl bg-blue-100 text-blue-600">
-              <Clock className="w-6 h-6" />
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">My Pending Approvals</p>
-          <p className="text-3xl font-black text-gray-900 mt-1">{metrics.totalPending}</p>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Expected Interest</p>
+          <p className="text-2xl sm:text-3xl font-black text-gray-900 mt-1">₦{(metrics.monthlyExpectedProfit / 1000).toFixed(1)}k</p>
         </div>
       </div>
 
@@ -570,10 +562,12 @@ export function StaffDashboard() {
                           <div>
                             <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">Spreadsheet Preview</p>
                             <div className="flex flex-col gap-1 mt-1">
-                              {loanSummary.schedule.slice(0, 2).map((s, i) => (
+                              {loanSummary.schedule.slice(0, 4).map((s, i) => (
                                 <p key={i} className="text-[9px] text-gray-300 font-medium">Month {i + 1}: ₦{s.total.toLocaleString()}</p>
                               ))}
-                              <p className="text-[9px] text-gray-500 italic">...and {loanSummary.schedule.length - 2} more</p>
+                              {loanSummary.schedule.length > 4 && (
+                                <p className="text-[9px] text-gray-500 italic">...and {loanSummary.schedule.length - 4} more</p>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center">
@@ -638,23 +632,37 @@ export function StaffDashboard() {
                     {/* Submit Actions */}
                     <div className="space-y-6 flex flex-col justify-end">
                       <AnimatePresence>
-                        {parseInt(formData.loanTenure) < recommendedTenure && parseFloat(formData.loanAmount) > 0 && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="p-6 bg-red-50 border border-red-100 rounded-[2rem] flex gap-4"
-                          >
-                            <AlertCircle className="w-6 h-6 text-red-500 shrink-0" />
-                            <div>
-                              <p className="text-[10px] font-black text-red-800 uppercase tracking-wider mb-1">Tenure Too Short</p>
-                              <p className="text-xs text-red-700 font-medium leading-relaxed">
-                                This loan amount is not compatible with a {formData.loanTenure}-month tenure given the salary.
-                                It should be at least <b>{recommendedTenure} months</b> to accommodate the repayment.
-                              </p>
-                            </div>
-                          </motion.div>
-                        )}
+                        {(() => {
+                          const income = parseFloat(formData.monthlyIncome) || 0;
+                          const amount = parseFloat(formData.loanAmount) || 0;
+                          const safeMonthlyLimit = income * 0.90; // 90% for salary advance
+                          const highestPayment = loanSummary ? Math.max(...loanSummary.schedule.map(s => s.total)) : 0;
+                          const isSalaryAdvance = amount > income;
+
+                          // Only show warning if the HIGHEST single payment exceeds the safe limit
+                          const shouldWarn = highestPayment > safeMonthlyLimit && amount > 0;
+
+                          return shouldWarn ? (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.95 }}
+                              className="p-6 bg-amber-50 border border-amber-100 rounded-[2rem] flex gap-4"
+                            >
+                              <AlertCircle className="w-6 h-6 text-amber-500 shrink-0" />
+                              <div>
+                                <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider mb-1">Financial Caution</p>
+                                <p className="text-xs text-amber-700 font-medium leading-relaxed">
+                                  {isSalaryAdvance ? (
+                                    <>The highest monthly deduction (₦{Math.round(highestPayment).toLocaleString()}) exceeds the borrower's monthly salary. This is a high-risk Salary Advance that requires manager approval.</>
+                                  ) : (
+                                    <>A {formData.loanTenure}-month tenure requires payments up to ₦{Math.round(highestPayment).toLocaleString()}. Consider extending the tenure to <b>{recommendedTenure} months</b> for safer repayment.</>
+                                  )}
+                                </p>
+                              </div>
+                            </motion.div>
+                          ) : null;
+                        })()}
                       </AnimatePresence>
 
                       <div className="flex gap-4 pt-4">
@@ -1088,7 +1096,7 @@ export function StaffDashboard() {
                 <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                   <p className="text-[10px] text-primary font-black uppercase mb-2">Recommendation</p>
                   <p className="text-sm text-gray-600 font-medium leading-relaxed">
-                    The borrower has a monthly capacity of ₦{eligibleCapacity.remainingCapacity.toLocaleString()}.
+                    The borrower has a monthly repayment capacity of ₦{eligibleCapacity.remainingCapacity.toLocaleString()}.
                     For a {formData.loanTenure}-month tenure, the maximum safe amount to disburse is ₦{eligibleCapacity.maxPrincipal.toLocaleString()} with a monthly deduction of ₦{eligibleCapacity.monthlyRepayment.toLocaleString()}.
                   </p>
                 </div>

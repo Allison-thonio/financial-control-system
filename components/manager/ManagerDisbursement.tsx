@@ -7,9 +7,7 @@ import {
     Clock,
     Search,
     Filter,
-    ExternalLink,
     ArrowRight,
-    Wallet,
     AlertCircle,
     UserCheck,
     CreditCard,
@@ -93,8 +91,8 @@ export function ManagerDisbursement() {
 
     const filteredLoans = useMemo(() => {
         return approvedLoans.filter(l =>
-            l.borrowerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            l.staffEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (l.userName || l.borrowerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (l.email || l.staffEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
             l.id?.includes(searchQuery)
         );
     }, [approvedLoans, searchQuery]);
@@ -121,7 +119,7 @@ export function ManagerDisbursement() {
             addAuditLog(
                 'Funds Disbursed',
                 user?.email || 'Manager',
-                `HIGH-VALUE: Disbursed ₦${loan.loanAmount.toLocaleString()} to ${loan.borrowerName} (Loan ID: ${loan.id})`
+                `HIGH-VALUE: Disbursed ₦${loan.loanAmount.toLocaleString()} to ${loan.userName || loan.borrowerName || 'Unknown'} (Loan ID: ${loan.id})`
             );
 
             await fetchLoans();
@@ -148,44 +146,44 @@ export function ManagerDisbursement() {
         <div className="space-y-10">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
                         Fund <span className="text-primary italic">Disbursement</span>
-                        <Banknote className="w-8 h-8 text-primary/20" />
+                        <Banknote className="w-6 h-6 sm:w-8 sm:h-8 text-primary/20" />
                     </h1>
-                    <p className="text-gray-500 font-medium">Final authorization and bank transfer gateway</p>
+                    <p className="text-sm text-gray-500 font-medium">Final authorization and bank transfer gateway</p>
                 </div>
 
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-wrap gap-2 sm:gap-4">
                     <button
                         onClick={() => setShowBudgetModal(true)}
-                        className="bg-white px-6 py-4 rounded-[1.5rem] border border-gray-100 shadow-sm flex items-center gap-3 hover:bg-gray-50 transition-all font-bold text-sm"
+                        className="flex-1 sm:flex-none bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-[1.5rem] border border-gray-100 shadow-sm flex items-center justify-center gap-3 hover:bg-gray-50 transition-all font-bold text-[10px] sm:text-sm whitespace-nowrap"
                     >
-                        <TrendingUp className="w-5 h-5 text-primary" />
+                        <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                         {monthlyBudget ? 'Update Target' : 'Set Monthly Target'}
                     </button>
                     <button
                         onClick={() => setShowPastDisbursements(true)}
-                        className="bg-gray-900 text-white px-6 py-4 rounded-[1.5rem] shadow-xl shadow-gray-900/10 flex items-center gap-3 hover:bg-gray-800 transition-all font-bold text-sm"
+                        className="flex-1 sm:flex-none bg-gray-900 text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-[1.5rem] shadow-xl shadow-gray-900/10 flex items-center justify-center gap-3 hover:bg-gray-800 transition-all font-bold text-[10px] sm:text-sm whitespace-nowrap"
                     >
-                        <HistoryIcon className="w-5 h-5 text-primary" />
-                        Past Disbursements
+                        <HistoryIcon className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                        History
                     </button>
                 </div>
 
-                <div className="bg-gray-900 px-8 py-4 rounded-[2rem] text-white flex items-center gap-6 shadow-xl shadow-gray-900/10">
-                    <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Expected Transfer</p>
-                        <p className="text-2xl font-black">₦{monthlyBudget?.expectedAmount.toLocaleString() || '0'}</p>
+                <div className="bg-gray-900 px-6 sm:px-8 py-4 rounded-[1.5rem] sm:rounded-[2rem] text-white flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 shadow-xl shadow-gray-900/10">
+                    <div className="text-center sm:text-left">
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">Expected Transfer</p>
+                        <p className="text-lg sm:text-2xl font-black">₦{monthlyBudget?.expectedAmount.toLocaleString() || '0'}</p>
                     </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Actual Disbursed</p>
-                        <p className="text-2xl font-black text-emerald-400">₦{monthlyBudget?.actualAmount.toLocaleString() || '0'}</p>
+                    <div className="hidden sm:block w-px h-8 bg-white/10" />
+                    <div className="text-center sm:text-left">
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">Actual Disbursed</p>
+                        <p className="text-lg sm:text-2xl font-black text-emerald-400">₦{monthlyBudget?.actualAmount.toLocaleString() || '0'}</p>
                     </div>
-                    <div className="w-px h-8 bg-white/10" />
-                    <div>
-                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Pending Count</p>
-                        <p className="text-2xl font-black">{approvedLoans.length}</p>
+                    <div className="hidden sm:block w-px h-8 bg-white/10" />
+                    <div className="text-center sm:text-left">
+                        <p className="text-[8px] sm:text-[10px] font-black text-gray-400 uppercase tracking-widest">Pending</p>
+                        <p className="text-lg sm:text-2xl font-black">{approvedLoans.length}</p>
                     </div>
                 </div>
             </header>
@@ -227,11 +225,11 @@ export function ManagerDisbursement() {
                                         initial={{ opacity: 0, scale: 0.9 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         exit={{ opacity: 0, scale: 0.9 }}
-                                        className="bg-white border border-gray-100 p-8 rounded-[2.5rem] shadow-sm hover:shadow-xl hover:shadow-gray-900/5 transition-all group"
+                                        className="bg-white border border-gray-100 p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2.5rem] shadow-sm hover:shadow-xl hover:shadow-gray-900/5 transition-all group"
                                     >
                                         <div className="flex justify-between items-start mb-6">
                                             <div className="w-14 h-14 bg-gray-50 rounded-[1.2rem] flex items-center justify-center font-black text-gray-900 text-xl group-hover:bg-primary group-hover:text-white transition-colors">
-                                                {loan.borrowerName.charAt(0)}
+                                                {(loan.userName || loan.borrowerName || 'U').charAt(0)}
                                             </div>
                                             <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black uppercase tracking-widest border border-emerald-100">
                                                 Ready
@@ -240,8 +238,8 @@ export function ManagerDisbursement() {
 
                                         <div className="mb-8">
                                             <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mb-1">Recipient</p>
-                                            <h4 className="text-xl font-black text-gray-900">{loan.borrowerName}</h4>
-                                            <p className="text-xs text-gray-500 font-medium">{loan.staffEmail}</p>
+                                            <h4 className="text-xl font-black text-gray-900">{loan.userName || loan.borrowerName}</h4>
+                                            <p className="text-xs text-gray-500 font-medium">{loan.email || loan.staffEmail}</p>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4 mb-8">
@@ -251,7 +249,7 @@ export function ManagerDisbursement() {
                                             </div>
                                             <div className="p-4 bg-gray-50 rounded-2xl">
                                                 <p className="text-[9px] text-gray-400 font-black uppercase mb-1">Tenure</p>
-                                                <p className="text-lg font-black text-gray-900">{loan.loanTenure} MO</p>
+                                                <p className="text-lg font-black text-gray-900">{loan.loanTerm} MO</p>
                                             </div>
                                         </div>
 
