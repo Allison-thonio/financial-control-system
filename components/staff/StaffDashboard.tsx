@@ -155,13 +155,23 @@ export function StaffDashboard() {
     const income = parseFloat(formData.monthlyIncome) || 0;
     if (amount <= 0 || income <= 0) return 1;
 
-    // Using 40% DTI limit as baseline
-    const maxMonthlyPay = income * 0.4;
-    // Simple interest approximation for recommendation: (Principal * (1 + (rate * estimated_tenure))) / maxMonthlyPay
-    // Let's assume a mid-range interest to give a safe recommendation
-    const estimatedTotal = amount * (1 + settings.interestRate * 4);
-    return Math.ceil(estimatedTotal / maxMonthlyPay);
+    // Iteratively find the first tenure that allows affordable monthly payments
+    const limitToCheck = settings.maxTenure ? Math.max(settings.maxTenure, 12) : 60;
+
+    for (let t = 1; t <= limitToCheck; t++) {
+      const { total } = calculateTotalRepayment(amount, t, income, settings);
+      const monthlyPayment = total / t;
+
+      const limitFactor = t <= 3 ? 1.0 : 0.4;
+
+      if (monthlyPayment <= (income * limitFactor)) {
+        return t;
+      }
+    }
+
+    return limitToCheck;
   }, [formData.loanAmount, formData.monthlyIncome, settings]);
+
 
   // Metrics calculation (Staff version of Manager metrics)
   const metrics = useMemo(() => {
@@ -223,8 +233,8 @@ export function StaffDashboard() {
     }
 
     if (parseInt(formData.loanTenure) < recommendedTenure) {
-      alert(`Incompatible Tenure: For a loan of ₦${amount.toLocaleString()} with a salary of ₦${income.toLocaleString()}, the tenure must be at least ${recommendedTenure} months.`);
-      return;
+      const confirmTenure = confirm(`System Notice: The selected tenure is shorter than the AI-recommended minimum of ${recommendedTenure} months. This requires aggressive repayment. Proceed?`);
+      if (!confirmTenure) return;
     }
 
     if (eligibleCapacity && amount > eligibleCapacity.maxPrincipal) {
@@ -302,7 +312,7 @@ export function StaffDashboard() {
         interestRate: settings.interestRate * 100,
         monthlyEMI: Math.round(totalRepayment / tenure),
         status: 'pending',
-        repaymentType: amount > income ? 'salary_advance' : 'default',
+        repaymentType: formData.repaymentType,
         nin: formData.nin || undefined,
         appointmentLetter: appointmentLetterUrl,
         passportPhoto: passportPhotoUrl,
@@ -520,18 +530,80 @@ export function StaffDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="block text-sm font-bold text-gray-700 ml-1">Loan Tenure (1-12 Months)</label>
+                      <label className="block text-sm font-bold text-gray-700 ml-1">Loan Tenure (Months)</label>
                       <select
                         value={formData.loanTenure}
                         onChange={(e) => setFormData({ ...formData, loanTenure: e.target.value })}
                         className="w-full px-5 py-4 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base"
                       >
-                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+                        {Array.from({ length: settings.maxTenure || 12 }, (_, i) => i + 1).map(m => (
                           <option key={m} value={m}>{m} {m === 1 ? 'Month' : 'Months'}</option>
                         ))}
                       </select>
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-bold text-gray-700 ml-1">Repayment Strategy</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, repaymentType: 'default' })}
+                        className={`p-4 rounded-2xl border text-left transition-all ${formData.repaymentType === 'default' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-widest mb-1">Standard EMI</p>
+                        <p className="text-[10px] opacity-80">Fixed monthly deductions</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, repaymentType: 'salary_advance' })}
+                        className={`p-4 rounded-2xl border text-left transition-all ${formData.repaymentType === 'salary_advance' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-widest mb-1">Salary Wipe</p>
+                        <p className="text-[10px] opacity-80">100% deduction until cleared</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, repaymentType: 'custom' })}
+                        className={`p-4 rounded-2xl border text-left transition-all ${formData.repaymentType === 'custom' ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-widest mb-1">Custom Plan</p>
+                        <p className="text-[10px] opacity-80">Flexible / Manual edits</p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Custom Plan Editor (Visible only when Custom is selected) */}
+                  <AnimatePresence>
+                    {formData.repaymentType === 'custom' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-5 bg-gray-50 rounded-[2rem] border border-gray-200 space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="p-2 bg-primary/10 rounded-lg text-primary"><TrendingUp className="w-4 h-4" /></div>
+                            <p className="text-xs font-black uppercase text-gray-500">Manual Repayment Schedule (Projected)</p>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {Array.from({ length: Math.min(parseInt(formData.loanTenure) || 3, 12) }).map((_, i) => (
+                              <div key={i} className="space-y-1">
+                                <label className="text-[9px] font-bold text-gray-400 uppercase">Month {i + 1}</label>
+                                <input
+                                  type="number"
+                                  placeholder="Auto-calc"
+                                  className="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-amber-600 italic mt-2">* Custom amounts must sum to Total Repayment. The system will auto-balance remaining amounts.</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Real-time Calculation Summary */}
                   <AnimatePresence>
@@ -637,10 +709,19 @@ export function StaffDashboard() {
                           const amount = parseFloat(formData.loanAmount) || 0;
                           const safeMonthlyLimit = income * 0.90; // 90% for salary advance
                           const highestPayment = loanSummary ? Math.max(...loanSummary.schedule.map(s => s.total)) : 0;
-                          const isSalaryAdvance = amount > income;
+                          // Refining Logic: 
+                          // - If Tenure <= 3 months: Allow up to 100% deduction (Salary Advance). Warn only if > 100%.
+                          // - If Tenure > 3 months: Warn if > 40% (Standard Safety).
 
-                          // Only show warning if the HIGHEST single payment exceeds the safe limit
-                          const shouldWarn = highestPayment > safeMonthlyLimit && amount > 0;
+                          const tenure = parseInt(formData.loanTenure) || 3;
+                          const isShortTerm = tenure <= 3;
+
+                          // True warning condition
+                          const isRisky = isShortTerm
+                            ? highestPayment > income // Impossible to pay more than 100%
+                            : highestPayment > (income * 0.4); // Standard threshold
+
+                          const shouldWarn = isRisky && amount > 0;
 
                           return shouldWarn ? (
                             <motion.div
@@ -653,10 +734,10 @@ export function StaffDashboard() {
                               <div>
                                 <p className="text-[10px] font-black text-amber-800 uppercase tracking-wider mb-1">Financial Caution</p>
                                 <p className="text-xs text-amber-700 font-medium leading-relaxed">
-                                  {isSalaryAdvance ? (
-                                    <>The highest monthly deduction (₦{Math.round(highestPayment).toLocaleString()}) exceeds the borrower's monthly salary. This is a high-risk Salary Advance that requires manager approval.</>
+                                  {isShortTerm ? (
+                                    <>Monthly deduction (₦{Math.round(highestPayment).toLocaleString()}) exceeds total salary. Please reduce amount or extend tenure.</>
                                   ) : (
-                                    <>A {formData.loanTenure}-month tenure requires payments up to ₦{Math.round(highestPayment).toLocaleString()}. Consider extending the tenure to <b>{recommendedTenure} months</b> for safer repayment.</>
+                                    <>A {formData.loanTenure}-month tenure requires payments up to ₦{Math.round(highestPayment).toLocaleString()} ({Math.round((highestPayment / income) * 100)}% of salary). Consider extending to <b>{recommendedTenure} months</b> for safer repayment.</>
                                   )}
                                 </p>
                               </div>

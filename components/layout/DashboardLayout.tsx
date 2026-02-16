@@ -1,6 +1,7 @@
 'use client';
 
 import { Sidebar } from '@/components/Sidebar';
+import { Notifications } from '@/components/layout/Notifications';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Menu, X, Bell } from 'lucide-react';
@@ -81,10 +82,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 `}>
                     {/* Top Top bar for Desktop */}
                     <div className="hidden lg:flex h-20 px-10 items-center justify-end gap-6 bg-white/50 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-30">
-                        <button className="p-2 text-gray-400 hover:text-primary transition-colors relative">
-                            <Bell className="w-5 h-5" />
-                            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-                        </button>
+                        <Notifications />
                         <div className="flex items-center gap-3 pl-4 border-l border-gray-100">
                             <div className="text-right">
                                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{role} session</p>

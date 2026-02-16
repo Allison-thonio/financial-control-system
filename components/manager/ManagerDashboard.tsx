@@ -160,7 +160,16 @@ export function ManagerDashboard() {
         );
 
         setShowApprovalModal(false);
-        setSelectedLoan(null);
+
+        // Optimistically update the selected loan so the Details Modal ("Spreadsheet") reflects the change
+        const updatedLoan = { ...selectedLoan, status: newStatus };
+        setSelectedLoan(updatedLoan as LoanApp);
+
+        // Only clear selection if we are NOT viewing the details modal
+        if (!showDetailsModal) {
+          setSelectedLoan(null);
+        }
+
         setApprovalData({ approved: false, reason: '' });
         fetchLoans();
       } catch (error) {
