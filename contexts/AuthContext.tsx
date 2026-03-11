@@ -25,126 +25,70 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isDemoMode, setIsDemoMode] = useState(false);
 
-  const checkDemoAuth = useCallback(() => {
+  const checkInternalAuth = useCallback(() => {
     if (typeof window === 'undefined') return false;
-
-    const authStr = localStorage.getItem('demoAuth') || localStorage.getItem('loanAppAuth') ||
-      sessionStorage.getItem('demoAuth') || sessionStorage.getItem('loanAppAuth');
-
-    console.log('[Auth] Checking for session:', authStr ? 'Found' : 'Not found');
-
+    const authStr = sessionStorage.getItem('internalAuth');
     if (authStr) {
       try {
         const authData = JSON.parse(authStr);
-        if (authData && authData.role) {
-          const newUser = {
-            uid: `demo-${authData.role}`,
-            email: authData.email,
-            role: authData.role,
-            demoMode: true,
-          } as any;
-          setUser(newUser);
-          setLoading(false); // Ensure loading is false when user is set
-          return true;
-        }
+        setUser({
+          uid: `internal-${authData.role}`,
+          email: authData.email,
+          role: authData.role,
+          displayName: authData.name,
+          demoMode: true,
+        } as any);
+        setLoading(false);
+        return true;
       } catch (err) {
-        console.error('[Auth] Failed to parse session:', err);
+        console.error('[Auth] Failed to parse internal session:', err);
       }
     }
     return false;
   }, []);
 
-  const refreshAuth = useCallback(() => {
-    console.log('[Auth] refreshAuth called');
-    if (!checkDemoAuth()) {
-      setLoading(false); // If no demo auth found, still stop loading
-    }
-  }, [checkDemoAuth]);
-
   useEffect(() => {
-    // Safety timeout to prevent perpetual loading
-    const safetyTimeout = setTimeout(() => {
-      if (loading) {
-        console.warn('[Auth] Safety timeout reached (4s), forcing loading to false');
-        setLoading(false);
-      }
-    }, 4000); // Reduced to 4 seconds for snappier fallback
+    console.log('[Auth] Initializing Auth listener');
 
-    // Check if auth is properly initialized (null auth means demo mode)
-    console.log('[System] AuthProvider initializing - auth:', auth, 'db:', db);
-
-    if (!auth || typeof auth !== 'object' || !('app' in auth)) {
-      console.log('[Auth] Demo mode activated - auth not available');
-      setIsDemoMode(true);
-      checkDemoAuth();
-      setLoading(false);
-      clearTimeout(safetyTimeout);
-      return;
+    // Immediate check for internal session
+    if (checkInternalAuth()) {
+        console.log('[Auth] Internal session detected');
+        return; 
     }
 
-    try {
-      console.log('[Auth] Setting up onAuthStateChanged listener');
-
-      // Immediate check for existing demo session to avoid "loading" flash
-      if (checkDemoAuth()) {
-        console.log('[Auth] Found existing demo session, prioritizing over Firebase listener');
-        setLoading(false);
-      }
-
-      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-        console.log('[Auth] onAuthStateChanged triggered:', firebaseUser?.email);
-        if (firebaseUser) {
-          try {
-            if (db && typeof db === 'object' && 'type' in db) {
-              const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-              const role = userDoc.exists() ? userDoc.data().role : 'staff';
-              setUser({ ...firebaseUser, role } as User);
-            } else {
-              setUser(firebaseUser as User);
-            }
-          } catch (error) {
-            console.error('[Auth] Error fetching user role:', error);
-            setUser(firebaseUser as User);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      if (firebaseUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUser({ 
+              ...firebaseUser, 
+              role: userData.role || 'staff',
+              displayName: userData.name || firebaseUser.displayName 
+            } as User);
+          } else {
+            setUser({ ...firebaseUser, role: 'staff' } as User);
           }
-        } else {
-          // If no Firebase user, check for demo session as fallback
-          checkDemoAuth();
+        } catch (error) {
+          console.error('[Auth] Error fetching user role:', error);
+          setUser({ ...firebaseUser, role: 'staff' } as User);
         }
-        setLoading(false);
-        clearTimeout(safetyTimeout);
-      });
-
-      return () => {
-        unsubscribe();
-        clearTimeout(safetyTimeout);
-      };
-    } catch (error) {
-      console.error('[System] Firebase not properly initialized:', error);
-      setIsDemoMode(true);
-      checkDemoAuth();
+      } else {
+        setUser(null);
+      }
       setLoading(false);
-      clearTimeout(safetyTimeout);
-    }
-  }, [checkDemoAuth]);
+    });
+
+    return () => unsubscribe();
+  }, [checkInternalAuth]);
 
   const logout = async () => {
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('demoAuth');
-        localStorage.removeItem('loanAppAuth');
-        sessionStorage.removeItem('demoAuth');
-        sessionStorage.removeItem('loanAppAuth');
-      }
-
-      if (isDemoMode) {
-        setUser(null);
-        return;
-      }
-      if (auth) {
-        await signOut(auth);
-      }
+      sessionStorage.removeItem('internalAuth');
+      await signOut(auth);
       setUser(null);
     } catch (error) {
       console.error('[Auth] Error logging out:', error);
@@ -152,8 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshAuth = () => {
+    checkInternalAuth();
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refreshAuth, isDemoMode }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshAuth, isDemoMode: false }}>
       {children}
     </AuthContext.Provider>
   );

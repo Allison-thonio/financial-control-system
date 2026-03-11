@@ -1,10 +1,11 @@
 'use client';
 
 import React from "react"
-
 import { useState } from 'react';
 import { createLoanApplication, uploadFile } from '@/lib/db';
 import { Timestamp } from 'firebase/firestore';
+import { useSystem } from '@/contexts/SystemContext';
+import { calculateTotalRepayment } from '@/lib/loanLogic';
 
 interface LoanApplicationFormProps {
   userId: string;
@@ -21,22 +22,35 @@ export default function LoanApplicationForm({
   monthlyIncome,
   onSuccess,
 }: LoanApplicationFormProps) {
+  const { settings } = useSystem();
+
   const [loanAmount, setLoanAmount] = useState(50000);
   const [loanReason, setLoanReason] = useState('');
   const [loanTerm, setLoanTerm] = useState(12);
-  const [interestRate, setInterestRate] = useState(8);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [appointmentLetter, setAppointmentLetter] = useState<File | null>(null);
   const [passportPhoto, setPassportPhoto] = useState<File | null>(null);
+  const [isSalaryOffset, setIsSalaryOffset] = useState(false);
+
+  // Interest rate is always locked to the system-configured rate (default 10%)
+  const systemRate = settings.interestRate; // e.g. 0.10
+  const systemRatePercent = Math.round(systemRate * 100); // e.g. 10
 
   const maxLoan = monthlyIncome * 20;
-  const monthlyRate = interestRate / 100 / 12;
-  const emi =
-    loanAmount === 0
-      ? 0
-      : (loanAmount * monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) /
-      (Math.pow(1 + monthlyRate, loanTerm) - 1);
+
+  // Use the same calculation engine as loanLogic.ts for consistency
+  const repayment = loanAmount > 0
+    ? calculateTotalRepayment(loanAmount, loanTerm, monthlyIncome, settings, isSalaryOffset)
+    : { total: 0, interest: 0, isReducing: false };
+
+  const totalRepayment = repayment.total;
+  const monthlyPayment = loanTerm > 0 ? totalRepayment / loanTerm : 0;
+  const totalInterest = repayment.interest;
+
+  // The interest rate we store is the system rate (as a percentage integer)
+  const interestRateForStorage = systemRatePercent;
+  const monthlyEMIForStorage = monthlyPayment;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,9 +89,10 @@ export default function LoanApplicationForm({
         loanReason: loanReason.trim(),
         loanTerm,
         monthlyIncome,
-        interestRate,
-        monthlyEMI: emi,
+        interestRate: interestRateForStorage,
+        monthlyEMI: monthlyEMIForStorage,
         status: 'pending',
+        repaymentType: isSalaryOffset ? 'salary_advance' : 'default',
         appointmentLetter: appointmentLetterUrl,
         passportPhoto: passportPhotoUrl,
       });
@@ -110,42 +125,59 @@ export default function LoanApplicationForm({
                 onChange={(e) => setLoanAmount(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="absolute right-3 top-2 text-gray-500 text-sm">₹</span>
+              <span className="absolute right-3 top-2 text-gray-500 text-sm">₦</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Max: ₹{Math.round(maxLoan).toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-1">Max: ₦{Math.round(maxLoan).toLocaleString()}</p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Loan Term (Months)</label>
             <input
               type="number"
-              min="6"
-              max="60"
+              min="1"
+              max={settings.maxTenure}
               value={loanTerm}
               onChange={(e) => setLoanTerm(Number(e.target.value))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-xs text-gray-500 mt-1">Max tenure: {settings.maxTenure} months</p>
+          </div>
+
+          {/* Interest rate is fixed — display only, not editable */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Interest Rate</label>
+            <div className="px-3 py-2 bg-gray-100 border border-gray-200 rounded-lg text-gray-600 font-semibold flex items-center justify-between">
+              <span>{systemRatePercent}% per month (fixed)</span>
+              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">System Rate</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Set by management. Not adjustable.</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Interest Rate (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="25"
-              step="0.1"
-              value={interestRate}
-              onChange={(e) => setInterestRate(Number(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Monthly EMI</label>
-            <div className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-700 font-medium">
-              ₹{emi.toFixed(2)}
+            <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Payment</label>
+            <div className={`px-3 py-2 border rounded-lg font-medium ${isSalaryOffset ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-gray-50 border-gray-300 text-gray-700'}`}>
+              {isSalaryOffset ? 'Variable (Salary Take)' : `₦${monthlyPayment.toFixed(2)}`}
             </div>
           </div>
+        </div>
+
+        {/* Repayment Type Toggle */}
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="space-y-1">
+            <h4 className="text-sm font-bold text-gray-900">Repayment Mode</h4>
+            <p className="text-xs text-gray-500">
+              {isSalaryOffset 
+                ? "Takes full salary for initial months, interest deferred to final month." 
+                : "Equal monthly installments including principal and interest."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsSalaryOffset(!isSalaryOffset)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ring-2 ring-offset-2 ${isSalaryOffset ? 'bg-orange-500 ring-orange-500' : 'bg-gray-200 ring-transparent'}`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isSalaryOffset ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
         </div>
 
         <div>
@@ -185,18 +217,25 @@ export default function LoanApplicationForm({
           <h3 className="font-semibold text-blue-900 mb-3">Loan Summary</h3>
           <div className="space-y-2 text-sm text-blue-800">
             <p>
-              <span className="font-medium">Total Loan Amount:</span> ₹{loanAmount.toLocaleString()}
+              <span className="font-medium">Principal Amount:</span> ₦{loanAmount.toLocaleString()}
             </p>
             <p>
-              <span className="font-medium">Monthly EMI:</span> ₹{emi.toFixed(2)}
+              <span className="font-medium">Interest Rate:</span> {systemRatePercent}% (flat, system-fixed)
+            </p>
+            <p>
+              <span className="font-medium">Total Interest:</span> ₦{totalInterest.toFixed(2)}
+            </p>
+            <p>
+              <span className="font-medium">Monthly Payment:</span> ₦{monthlyPayment.toFixed(2)}
             </p>
             <p>
               <span className="font-medium">Total Duration:</span> {loanTerm} months
             </p>
-            <p>
-              <span className="font-medium">Total Amount to Pay:</span> ₹
-              {(emi * loanTerm).toFixed(2)}
-            </p>
+            <div className="border-t border-blue-200 pt-2 mt-2">
+              <p className="font-bold text-blue-900 text-base">
+                Total Amount to Repay: ₦{totalRepayment.toFixed(2)}
+              </p>
+            </div>
           </div>
         </div>
 

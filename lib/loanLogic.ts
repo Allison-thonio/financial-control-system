@@ -28,81 +28,28 @@ export const DEFAULT_SETTINGS: SystemSettings = {
 
 /**
  * Calculates the total repayment for a loan based on principal and tenure.
+ * Supports Standard (Monthly interest) and Salary Offset (Interest deferred to end).
  */
 export function calculateTotalRepayment(
   principal: number,
   tenureMonths: number,
   monthlySalary: number = 0,
-  settings: SystemSettings = DEFAULT_SETTINGS
+  settings: SystemSettings = DEFAULT_SETTINGS,
+  isSalaryOffset: boolean = false
 ) {
   const r = settings.interestRate;
 
-  // Custom logic for "Salary Advance" style requested by user
-  const isSalaryTakeLogic = monthlySalary > 0 && principal > monthlySalary && tenureMonths <= 12;
+  // Total interest is always flat 10% per month of the original principal
+  const totalInterest = principal * r * tenureMonths;
+  const totalRepayment = principal + totalInterest;
 
-  if (isSalaryTakeLogic) {
-    let remainingPrincipal = principal;
-    let totalInterest = 0;
-
-    // Simulate the schedule to get accurate total
-    for (let i = 1; i <= tenureMonths; i++) {
-      let interest = 0;
-      let principalPaid = 0;
-
-      if (i === 1) {
-        // Month 1: deduct entire salary (up to principal), 0 interest.
-        principalPaid = Math.min(monthlySalary, remainingPrincipal);
-        interest = 0;
-      } else if (i === 2) {
-        // Month 2: 20% interest on remaining
-        interest = remainingPrincipal * 0.20;
-        // Assume we pay as much as possible
-        const paymentTowardsPrincipal = Math.max(0, monthlySalary - interest);
-        principalPaid = Math.min(paymentTowardsPrincipal, remainingPrincipal);
-      } else {
-        // Month 3+: Standard logical fallback
-        interest = remainingPrincipal * r;
-        const paymentTowardsPrincipal = Math.max(0, monthlySalary - interest);
-        principalPaid = Math.min(paymentTowardsPrincipal, remainingPrincipal);
-      }
-
-      totalInterest += interest;
-      remainingPrincipal -= principalPaid;
-
-      if (remainingPrincipal <= 0) break;
-    }
-
-    // If there's still balance after tenure (if salary was too low), 
-    // strictly speaking the loan failed the parameters, but we just return cost here.
-    const total = principal + totalInterest;
-
-    return {
-      total: total,
-      interest: totalInterest,
-      isReducing: true,
-      monthlyPayment: total / tenureMonths
-    };
-
-  } else if (tenureMonths <= 12) {
-    // Standard Simple Interest
-    const interest = principal * r * tenureMonths;
-    return {
-      total: principal + interest,
-      interest: interest,
-      isReducing: false
-    };
-  } else {
-    // Amortized for longer periods (though user said limit to 1 yr)
-    const n = tenureMonths;
-    const monthlyPayment = principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-    const total = monthlyPayment * n;
-    return {
-      total: total,
-      interest: total - principal,
-      isReducing: true,
-      monthlyPayment: monthlyPayment
-    };
-  }
+  return {
+    total: totalRepayment,
+    interest: totalInterest,
+    isReducing: false,
+    monthlyPayment: totalRepayment / tenureMonths, // Helpful for Standard, varies for Offset
+    isSalaryOffset
+  };
 }
 
 export function calculateLoanCapacity(
@@ -164,16 +111,17 @@ export function getDetailedRepaymentSchedule(
   tenureMonths: number,
   startDate: Date,
   monthlySalary: number = 0,
-  settings: SystemSettings = DEFAULT_SETTINGS
+  settings: SystemSettings = DEFAULT_SETTINGS,
+  isSalaryOffset: boolean = false
 ): RepaymentStep[] {
   const schedule: RepaymentStep[] = [];
-  let remainingPrincipal = principal;
   const r = settings.interestRate;
+  const totalInterest = principal * r * tenureMonths;
 
-  // Check if we should use the "Salary Take" logic
-  const isSalaryTakeLogic = monthlySalary > 0 && principal > monthlySalary && tenureMonths <= 12;
+  let remainingPrincipal = principal;
 
-  if (isSalaryTakeLogic) {
+  if (isSalaryOffset && monthlySalary > 0) {
+    // Salary Offset Logic: Take full salary until the last month
     for (let i = 1; i <= tenureMonths; i++) {
       const dueDate = new Date(startDate);
       dueDate.setMonth(startDate.getMonth() + i);
@@ -181,104 +129,55 @@ export function getDetailedRepaymentSchedule(
       let principalPaid = 0;
       let interestPaid = 0;
 
-      if (i === 1) {
-        // Month 1: Take ENTIRE salary as principal. Interest is 0.
+      if (i < tenureMonths) {
+        // Months 1 to (n-1): Pay full salary towards principal. 0 Interest.
         principalPaid = Math.min(monthlySalary, remainingPrincipal);
         interestPaid = 0;
-      } else if (i === 2) {
-        // Month 2: Charge 20% interest on what was left after Month 1
-        interestPaid = remainingPrincipal * 0.20;
-
-        // We prioritize paying interest, then principal
-        const amountAvailable = monthlySalary;
-        // If salary can't cover interest, we have a problem (negative amort), but logic assumes validity.
-        const paymentTowardsPrincipal = Math.max(0, amountAvailable - interestPaid);
-
-        if (i === tenureMonths) {
-          principalPaid = remainingPrincipal; // Force close (or show arrears if > payment)
-        } else {
-          // Pay as much as possible
-          principalPaid = Math.min(paymentTowardsPrincipal, remainingPrincipal);
-        }
-
       } else {
-        // Month 3+: Standard logical fallback
-        interestPaid = remainingPrincipal * r;
-        const amountAvailable = monthlySalary;
-        const paymentTowardsPrincipal = Math.max(0, amountAvailable - interestPaid);
-
-        if (i === tenureMonths) {
-          principalPaid = remainingPrincipal;
-        } else {
-          principalPaid = Math.min(paymentTowardsPrincipal, remainingPrincipal);
-        }
-      }
-
-      // Final month safety clamp
-      if (i === tenureMonths) {
-        // If this is the last month, the calculation says we must clear it.
-        // We set principalPaid to remaining.
-        // NOTE: This might exceed monthlySalary if the loan was badly planned.
-        // But for a schedule view, we show what IS DUE.
+        // Final Month: Pay remaining principal + ALL accumulated interest.
         principalPaid = remainingPrincipal;
+        interestPaid = totalInterest;
       }
 
-      const totalDue = principalPaid + interestPaid;
       remainingPrincipal -= principalPaid;
-
-      // Accounting correctness: Round components, then sum for Total
-      const roundedPrincipal = Math.round(principalPaid);
-      const roundedInterest = Math.round(interestPaid);
 
       schedule.push({
         month: dueDate.getMonth(),
         year: dueDate.getFullYear(),
-        principal: roundedPrincipal,
-        interest: roundedInterest,
-        total: roundedPrincipal + roundedInterest,
+        principal: Math.round(principalPaid),
+        interest: Math.round(interestPaid),
+        total: Math.round(principalPaid + interestPaid),
         remainingBalance: Math.max(0, Math.round(remainingPrincipal))
       });
     }
-    return schedule;
-  }
+  } else {
+    // Standard Flat Logic
+    const monthlyPrincipal = principal / tenureMonths;
+    const monthlyInterest = principal * r;
+    const monthlyTotal = monthlyPrincipal + monthlyInterest;
 
-  // Fallback to standard logic
-  const { total, isReducing } = calculateTotalRepayment(principal, tenureMonths, monthlySalary, settings);
-  const monthlyTotal = total / tenureMonths;
+    for (let i = 1; i <= tenureMonths; i++) {
+      const dueDate = new Date(startDate);
+      dueDate.setMonth(startDate.getMonth() + i);
 
-  for (let i = 1; i <= tenureMonths; i++) {
-    const dueDate = new Date(startDate);
-    dueDate.setMonth(startDate.getMonth() + i);
+      remainingPrincipal -= monthlyPrincipal;
+      if (i === tenureMonths) remainingPrincipal = 0;
 
-    let interest = 0;
-    let principalPaid = 0;
-
-    if (!isReducing) {
-      interest = (principal * r);
-      principalPaid = principal / tenureMonths;
-    } else {
-      interest = remainingPrincipal * r;
-      principalPaid = monthlyTotal - interest;
+      schedule.push({
+        month: dueDate.getMonth(),
+        year: dueDate.getFullYear(),
+        principal: Math.round(monthlyPrincipal),
+        interest: Math.round(monthlyInterest),
+        total: Math.round(monthlyTotal),
+        remainingBalance: Math.max(0, Math.round(remainingPrincipal))
+      });
     }
-
-    remainingPrincipal -= principalPaid;
-    if (i === tenureMonths) remainingPrincipal = 0;
-
-    const roundedPrincipal = Math.round(principalPaid);
-    const roundedInterest = Math.round(interest);
-
-    schedule.push({
-      month: dueDate.getMonth(),
-      year: dueDate.getFullYear(),
-      principal: roundedPrincipal,
-      interest: roundedInterest,
-      total: roundedPrincipal + roundedInterest,
-      remainingBalance: Math.max(0, Math.round(remainingPrincipal))
-    });
   }
 
   return schedule;
 }
+
+
 
 export function calculateProfit(loans: Array<{ amount: number, interest: number, status: string }>) {
   const disbursed = loans.reduce((sum, l) => sum + l.amount, 0);

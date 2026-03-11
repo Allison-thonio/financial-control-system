@@ -4,23 +4,14 @@ import React from "react"
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { validateDemoCredentials } from '@/lib/demoAuth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
+
 import { useAuth } from '@/contexts/AuthContext';
 
-const DEMO_CREDENTIALS = {
-  staff: {
-    email: 'thinkerricker@gmail.com',
-    password: 'ggsnigga',
-  },
-  manager: {
-    email: 'allisonfezyy@gmail.com',
-    password: 'ggs',
-  },
-};
-
 export default function LoginPage() {
-  const [email, setEmail] = useState('thinkerricker@gmail.com');
-  const [password, setPassword] = useState('ggsnigga');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { user, loading: authLoading, refreshAuth } = useAuth();
@@ -39,101 +30,84 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // Demo authentication logic
+      // 1. Check Internal Corporate Accounts First
+      const { validateDemoCredentials, INTERNAL_ACCOUNTS } = await import('@/lib/demoAuth');
       const { valid, role } = validateDemoCredentials(email, password);
 
       if (valid && role) {
-        // Store auth using both keys and both storage types for maximum compatibility and persistence
-        const authData = { email, role, timestamp: Date.now() };
-        localStorage.setItem('loanAppAuth', JSON.stringify(authData));
-        localStorage.setItem('demoAuth', JSON.stringify(authData));
-        sessionStorage.setItem('loanAppAuth', JSON.stringify(authData));
-        sessionStorage.setItem('demoAuth', JSON.stringify(authData));
-
-        // Refresh AuthContext state immediately
+        const account = INTERNAL_ACCOUNTS.find(a => a.email === email && a.password === password);
+        sessionStorage.setItem('internalAuth', JSON.stringify({ 
+          email, 
+          role, 
+          name: account?.name || 'Internal User',
+          timestamp: Date.now() 
+        }));
+        
         refreshAuth();
-
-        // Short delay for better UX and state propagation
-        await new Promise((resolve) => setTimeout(resolve, 300));
-
-        const redirectUrl = role === 'manager' ? '/manager' : '/staff';
-        router.push(redirectUrl);
-      } else {
-        setError('Invalid email or password');
-        setLoading(false);
+        return; // Redirect handled by useEffect
       }
-    } catch (err) {
-      setError('An unexpected error occurred');
+
+      // 2. Fallback to Firebase for Real Users
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err: any) {
+      console.error('[Auth] Login failed:', err);
+      setError('Invalid credentials or connection error.');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo and Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-green-600 to-emerald-600 mb-4">
-            <span className="text-white font-bold text-lg">LM</span>
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-600/20 mb-6">
+            <span className="font-black text-xl italic">FC</span>
           </div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2">
-            Loan Manager
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">
+            Welcome <span className="text-blue-600 italic">Back.</span>
           </h1>
-          <p className="text-gray-600">Employee Loan Management System</p>
+          <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Financial Control System</p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => { setEmail('allisonfezyy@gmail.com'); setPassword('ggs'); }}
-                className="flex-1 text-[10px] py-1 bg-blue-50 text-blue-600 rounded border border-blue-100 hover:bg-blue-100 font-bold"
-              >
-                Manager Auto-fill
-              </button>
-              <button
-                type="button"
-                onClick={() => { setEmail('thinkerricker@gmail.com'); setPassword('ggsnigga'); }}
-                className="flex-1 text-[10px] py-1 bg-green-50 text-green-600 rounded border border-green-100 hover:bg-green-100 font-bold"
-              >
-                Staff Auto-fill
-              </button>
-            </div>
+        <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 p-10 border border-slate-100">
+          <form onSubmit={handleLogin} className="space-y-6">
             {/* Email Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-800 mb-2">
-                Email Address
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Corporate Email
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="name@company.com"
+                required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100"
+                className="w-full bg-slate-50 border-none rounded-2xl p-5 font-bold text-slate-900 focus:ring-4 focus:ring-blue-600/10 transition-all outline-none"
               />
             </div>
 
             {/* Password Field */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-800 mb-2">
-                Password
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                Security Password
               </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
+                required
                 disabled={loading}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100"
+                className="w-full bg-slate-50 border-none rounded-2xl p-5 font-bold text-slate-900 focus:ring-4 focus:ring-blue-600/10 transition-all outline-none"
               />
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-medium">
+              <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-widest text-center shadow-sm">
                 {error}
               </div>
             )}
@@ -142,34 +116,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-2 rounded-lg transition shadow-md"
+              className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 hover:shadow-slate-900/30 transition-all active:scale-[0.98]"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Authenticating...' : 'Establish Secure Connection'}
             </button>
           </form>
-
-          {/* Info Section */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-gray-600 text-xs text-center">Demo Mode - Use credentials below</p>
-          </div>
         </div>
 
-        {/* Demo Credentials */}
-        <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <p className="text-xs text-green-800 font-semibold mb-3">Demo Credentials:</p>
-          <div className="text-xs text-green-700 space-y-3">
-            <div>
-              <p className="font-semibold">Staff Account:</p>
-              <p className="font-mono text-green-600">thinkerricker@gmail.com</p>
-              <p className="font-mono text-green-600">ggsnigga</p>
-            </div>
-            <div>
-              <p className="font-semibold">Manager Account:</p>
-              <p className="font-mono text-green-600">allisonfezyy@gmail.com</p>
-              <p className="font-mono text-green-600">ggs</p>
-            </div>
-          </div>
-        </div>
+        <p className="text-center mt-10 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+          Powered by Financial Control System © 2024
+        </p>
       </div>
     </div>
   );

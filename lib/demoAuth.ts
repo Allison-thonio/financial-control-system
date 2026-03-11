@@ -1,26 +1,56 @@
-// Demo credentials for testing
-export const DEMO_CREDENTIALS = {
-  staff: {
-    email: 'thinkerricker@gmail.com',
-    password: 'ggsnigga',
-    role: 'staff' as const,
-  },
-  manager: {
-    email: 'allisonfezyy@gmail.com',
-    password: 'ggs',
+// Internal Company Credentials (Mock/Demo)
+export const INTERNAL_ACCOUNTS = [
+  {
+    email: 'admin@finance.com',
+    password: 'ggskicker',
     role: 'manager' as const,
+    name: 'System Admin'
   },
+  {
+    email: 'tony@finance.com',
+    password: 'tonysecure',
+    role: 'manager' as const,
+    name: 'Tony (Manager)'
+  },
+  {
+    email: 'staff@allison.com',
+    password: 'laptop',
+    role: 'staff' as const,
+    name: 'Allison Staff'
+  },
+  {
+    email: 'staff@ricker.com',
+    password: 'phone',
+    role: 'staff' as const,
+    name: 'Ricker Staff'
+  },
+  {
+    email: 'staff@smith.com',
+    password: 'keyboard',
+    role: 'staff' as const,
+    name: 'Smith Staff'
+  },
+  {
+    email: 'staff@kelly.com',
+    password: 'monitor',
+    role: 'staff' as const,
+    name: 'Kelly Staff'
+  }
+];
+
+export const DEMO_CREDENTIALS = {
+    staff: { email: 'staff@allison.com', password: 'laptop', role: 'staff' as const },
+    manager: { email: 'admin@finance.com', password: 'ggskicker', role: 'manager' as const }
 };
 
 export function validateDemoCredentials(
   email: string,
   password: string
 ): { valid: boolean; role?: 'staff' | 'manager' } {
-  if (email === DEMO_CREDENTIALS.staff.email && password === DEMO_CREDENTIALS.staff.password) {
-    return { valid: true, role: 'staff' };
-  }
-  if (email === DEMO_CREDENTIALS.manager.email && password === DEMO_CREDENTIALS.manager.password) {
-    return { valid: true, role: 'manager' };
+  const account = INTERNAL_ACCOUNTS.find(a => a.email === email && a.password === password);
+  
+  if (account) {
+    return { valid: true, role: account.role };
   }
   return { valid: false };
 }
