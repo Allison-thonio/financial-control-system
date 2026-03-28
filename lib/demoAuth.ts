@@ -1,10 +1,10 @@
 // Internal Company Credentials (Mock/Demo)
 export const INTERNAL_ACCOUNTS = [
   {
-    email: 'admin@finance.com',
+    email: 'allison@finance.com',
     password: 'ggskicker',
     role: 'manager' as const,
-    name: 'System Admin'
+    name: 'Allison (Lead)'
   },
   {
     email: 'tony@finance.com',
@@ -40,18 +40,37 @@ export const INTERNAL_ACCOUNTS = [
 
 export const DEMO_CREDENTIALS = {
     staff: { email: 'staff@allison.com', password: 'laptop', role: 'staff' as const },
-    manager: { email: 'admin@finance.com', password: 'ggskicker', role: 'manager' as const }
+    manager: { email: 'allison@finance.com', password: 'ggskicker', role: 'manager' as const }
 };
 
 export function validateDemoCredentials(
   email: string,
   password: string
-): { valid: boolean; role?: 'staff' | 'manager' } {
-  const account = INTERNAL_ACCOUNTS.find(a => a.email === email && a.password === password);
+): { valid: boolean; role?: 'staff' | 'manager'; name?: string; isUnofficial?: boolean } {
+  const cleanEmail = email.toLowerCase().trim();
   
+  // 1. Check for exact matches in our curated list (OFFICIAL)
+  const account = INTERNAL_ACCOUNTS.find(a => a.email.toLowerCase() === cleanEmail && a.password === password);
   if (account) {
-    return { valid: true, role: account.role };
+    return { valid: true, role: account.role, name: account.name, isUnofficial: false };
   }
+
+  // 2. Dynamic Pattern Matching for UNOFFICIAL testing
+  if (cleanEmail.startsWith('staff@')) {
+    const namePart = cleanEmail.split('@')[0].replace('staff', '').replace(/[^a-zA-Z]/g, '');
+    const displayName = namePart ? namePart.charAt(0).toUpperCase() + namePart.slice(1) : 'Staff User';
+    return { 
+        valid: true, 
+        role: 'staff', 
+        name: `${displayName} (Unofficial)`,
+        isUnofficial: true 
+    };
+  }
+
+  if (cleanEmail.startsWith('manager@') || cleanEmail === 'allison@finance.com') {
+    return { valid: true, role: 'manager', name: 'Test Manager', isUnofficial: false };
+  }
+
   return { valid: false };
 }
 

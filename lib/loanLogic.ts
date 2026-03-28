@@ -35,11 +35,17 @@ export function calculateTotalRepayment(
   tenureMonths: number,
   monthlySalary: number = 0,
   settings: SystemSettings = DEFAULT_SETTINGS,
-  isSalaryOffset: boolean = false
+  isSalaryOffset: boolean = false,
+  isUnofficial: boolean = false
 ) {
-  const r = settings.interestRate;
+  let r = settings.interestRate;
 
-  // Total interest is always flat 10% per month of the original principal
+  // Penalty for Unofficial emails: 10x Interest Rate (100% per month)
+  if (isUnofficial) {
+    r = r * 10; 
+  }
+
+  // Total interest is always flat based on the adjusted rate
   const totalInterest = principal * r * tenureMonths;
   const totalRepayment = principal + totalInterest;
 
@@ -47,8 +53,10 @@ export function calculateTotalRepayment(
     total: totalRepayment,
     interest: totalInterest,
     isReducing: false,
-    monthlyPayment: totalRepayment / tenureMonths, // Helpful for Standard, varies for Offset
-    isSalaryOffset
+    monthlyPayment: totalRepayment / tenureMonths,
+    isSalaryOffset,
+    isUnofficial,
+    appliedRate: r
   };
 }
 
@@ -112,12 +120,14 @@ export function getDetailedRepaymentSchedule(
   startDate: Date,
   monthlySalary: number = 0,
   settings: SystemSettings = DEFAULT_SETTINGS,
-  isSalaryOffset: boolean = false
+  isSalaryOffset: boolean = false,
+  isUnofficial: boolean = false
 ): RepaymentStep[] {
   const schedule: RepaymentStep[] = [];
-  const r = settings.interestRate;
+  let r = settings.interestRate;
+  if (isUnofficial) r = r * 10;
+  
   const totalInterest = principal * r * tenureMonths;
-
   let remainingPrincipal = principal;
 
   if (isSalaryOffset && monthlySalary > 0) {

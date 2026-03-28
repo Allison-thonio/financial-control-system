@@ -32,67 +32,73 @@ export default function LoginPage() {
     try {
       // 1. Check Internal Corporate Accounts First
       const { validateDemoCredentials, INTERNAL_ACCOUNTS } = await import('@/lib/demoAuth');
-      const { valid, role } = validateDemoCredentials(email, password);
+      const { valid, role, name, isUnofficial } = validateDemoCredentials(email.trim(), password.trim());
 
       if (valid && role) {
-        const account = INTERNAL_ACCOUNTS.find(a => a.email === email && a.password === password);
         sessionStorage.setItem('internalAuth', JSON.stringify({ 
-          email, 
+          email: email.trim(), 
           role, 
-          name: account?.name || 'Internal User',
+          name: name || 'Internal User',
+          isUnofficial: !!isUnofficial,
           timestamp: Date.now() 
         }));
         
         refreshAuth();
-        return; // Redirect handled by useEffect
+        return;
       }
 
-      // 2. Fallback to Firebase for Real Users
-      await signInWithEmailAndPassword(auth, email, password);
+      // 2. Fallback to Firebase
+      await signInWithEmailAndPassword(auth, email.trim(), password.trim());
     } catch (err: any) {
       console.error('[Auth] Login failed:', err);
-      setError('Invalid credentials or connection error.');
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password. Please try again.');
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Network error. Please check your internet connection.');
+      } else {
+        setError(err.message || 'An unexpected error occurred.');
+      }
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo and Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-600/20 mb-6">
-            <span className="font-black text-xl italic">FC</span>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-lg bg-gradient-to-br from-green-600 to-emerald-600 mb-4">
+            <span className="text-white font-bold text-lg">LM</span>
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">
-            Welcome <span className="text-blue-600 italic">Back.</span>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent mb-2">
+            Loan Manager
           </h1>
-          <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Financial Control System</p>
+          <p className="text-gray-600">Employee Loan Management System</p>
         </div>
 
         {/* Auth Card */}
-        <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 p-10 border border-slate-100">
-          <form onSubmit={handleLogin} className="space-y-6">
+        <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-8">
+          <form onSubmit={handleLogin} className="space-y-4">
             {/* Email Field */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                Corporate Email
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Email Address
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@company.com"
+                placeholder="your@email.com"
                 required
                 disabled={loading}
-                className="w-full bg-slate-50 border-none rounded-2xl p-5 font-bold text-slate-900 focus:ring-4 focus:ring-blue-600/10 transition-all outline-none"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100"
               />
             </div>
 
             {/* Password Field */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                Security Password
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Password
               </label>
               <input
                 type="password"
@@ -101,13 +107,13 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 required
                 disabled={loading}
-                className="w-full bg-slate-50 border-none rounded-2xl p-5 font-bold text-slate-900 focus:ring-4 focus:ring-blue-600/10 transition-all outline-none"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-100"
               />
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-2xl text-[10px] font-black uppercase tracking-widest text-center shadow-sm">
+              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-medium text-center">
                 {error}
               </div>
             )}
@@ -116,16 +122,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-slate-900 hover:bg-black text-white py-5 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 hover:shadow-slate-900/30 transition-all active:scale-[0.98]"
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-2 rounded-lg transition shadow-md"
             >
-              {loading ? 'Authenticating...' : 'Establish Secure Connection'}
+              {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-        </div>
 
-        <p className="text-center mt-10 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-          Powered by Financial Control System © 2024
-        </p>
+          <p className="text-center mt-6 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            Powered by Financial Control System © 2024
+          </p>
+        </div>
       </div>
     </div>
   );

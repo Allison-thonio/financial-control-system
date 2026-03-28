@@ -1,18 +1,35 @@
 'use client';
 
-import { LoanApplication, calculateRepaymentSchedule } from '@/lib/db';
+import { LoanApp } from '@/lib/db';
+import { getDetailedRepaymentSchedule } from '@/lib/loanLogic';
 import StatusBadge from './StatusBadge';
 
 interface LoanDetailsModalProps {
-  loan: LoanApplication;
+  loan: LoanApp;
   onClose: () => void;
 }
 
 export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProps) {
-  const monthlyRate = loan.interestRate / 100 / 12;
-  const schedule = calculateRepaymentSchedule(loan.loanAmount, monthlyRate, loan.loanTerm);
+  const startDate = loan.createdAt ? new Date(loan.createdAt) : new Date();
+  const rawSchedule = getDetailedRepaymentSchedule(
+    loan.loanAmount,
+    loan.loanTerm,
+    startDate,
+    loan.monthlyIncome,
+    { interestRate: loan.interestRate / 100, maxTenure: 12, salaryCapMultiplier: 3 },
+    false,
+    false
+  );
 
-  const totalInterest = schedule.reduce((sum, item) => sum + item.interest, 0);
+  const schedule = rawSchedule.map((s, index) => ({
+    step: index + 1,
+    emi: s.total,
+    principal: s.principal,
+    interest: s.interest,
+    balance: s.remainingBalance
+  }));
+
+  const totalInterest = schedule.reduce((sum: number, item: any) => sum + item.interest, 0);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -46,7 +63,7 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Monthly EMI</p>
-              <p className="text-2xl font-bold text-green-600">₹{loan.monthlyEMI.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-green-600">₹{loan.monthlyEMI?.toFixed(2) || '0.00'}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Interest Rate</p>
@@ -69,17 +86,21 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
 
           {loan.status === 'approved' && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-green-800 font-semibold">Approved by: {loan.approvedBy}</p>
-              <p className="text-green-700 text-sm">
-                On: {loan.approvalDate?.toDate().toLocaleDateString()}
-              </p>
+              <p className="text-green-800 font-semibold">Approved by: {loan.approvalReason || 'Admin'}</p>
+              {loan.updatedAt && (
+                <p className="text-green-700 text-sm">
+                  On: {new Date(
+                    typeof loan.updatedAt?.toDate === 'function' ? loan.updatedAt.toDate() : loan.updatedAt
+                  ).toLocaleDateString()}
+                </p>
+              )}
             </div>
           )}
 
           {loan.status === 'rejected' && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <p className="text-red-800 font-semibold mb-2">Rejection Reason</p>
-              <p className="text-red-700">{loan.rejectionReason}</p>
+              <p className="text-red-700">Application was rejected</p>
             </div>
           )}
 
@@ -98,9 +119,9 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                     </tr>
                   </thead>
                   <tbody>
-                    {schedule.slice(0, 6).map((row) => (
-                      <tr key={row.month} className="border-b">
-                        <td className="px-4 py-2">{row.month}</td>
+                    {schedule.slice(0, 6).map((row: any) => (
+                      <tr key={row.step} className="border-b">
+                        <td className="px-4 py-2">{row.step}</td>
                         <td className="px-4 py-2 text-right">₹{row.emi.toFixed(2)}</td>
                         <td className="px-4 py-2 text-right">₹{row.principal.toFixed(2)}</td>
                         <td className="px-4 py-2 text-right">₹{row.interest.toFixed(2)}</td>
