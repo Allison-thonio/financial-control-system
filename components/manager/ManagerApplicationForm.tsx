@@ -423,7 +423,7 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
                                         </p>
                                         <p className="text-xl sm:text-2xl font-black">
                                             {formData.repaymentType === 'salary_advance' 
-                                                ? `₦${income.toLocaleString()}` 
+                                                ? `₦${parseFloat(formData.monthlyIncome).toLocaleString()}` 
                                                 : `₦${Math.round(loanSummary.monthlyEMI).toLocaleString()}`}
                                         </p>
                                         <div className="flex items-center gap-1 mt-1">
