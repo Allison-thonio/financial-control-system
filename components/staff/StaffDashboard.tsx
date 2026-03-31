@@ -222,7 +222,7 @@ export function StaffDashboard() {
       isReducing: false,
       schedule
     };
-  }, [formData.loanAmount, formData.loanTenure, formData.monthlyIncome, settings]);
+  }, [formData.loanAmount, formData.loanTenure, formData.monthlyIncome, formData.repaymentType, settings]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,7 +311,7 @@ export function StaffDashboard() {
         userName: name,
         email: user?.email || 'Unknown',
         loanAmount: amount,
-        loanReason: amount > income ? 'Salary Advance' : 'General Purpose',
+        loanReason: formData.repaymentType === 'salary_advance' ? 'Salary Advance / Wipe' : 'General Purpose',
         monthlyIncome: income,
         loanTerm: tenure,
         interestRate: settings.interestRate * 100,

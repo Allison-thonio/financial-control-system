@@ -117,7 +117,7 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
             isReducing: false,
             schedule
         };
-    }, [formData.loanAmount, formData.loanTenure, formData.monthlyIncome, settings]);
+    }, [formData.loanAmount, formData.loanTenure, formData.monthlyIncome, formData.repaymentType, settings]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

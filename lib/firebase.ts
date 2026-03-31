@@ -34,12 +34,21 @@ try {
 
   // Use persistent local cache on client to survive page refreshes
   if (typeof window !== 'undefined') {
-    db = initializeFirestore(app, {
-      localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-      }),
-      experimentalForceLongPolling: true
-    });
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        }),
+        experimentalForceLongPolling: true
+      });
+    } catch (e: any) {
+      if (e.message && e.message.includes('already been started')) {
+        db = getFirestore(app);
+      } else {
+        console.error('Firestore init error:', e);
+        db = getFirestore(app);
+      }
+    }
   } else {
     db = getFirestore(app);
   }
