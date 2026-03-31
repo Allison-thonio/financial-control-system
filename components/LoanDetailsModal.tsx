@@ -17,7 +17,7 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
     startDate,
     loan.monthlyIncome,
     { interestRate: loan.interestRate / 100, maxTenure: 12, salaryCapMultiplier: 3 },
-    false,
+    loan.repaymentType === 'salary_advance',
     false
   );
 
@@ -55,15 +55,15 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Loan Amount</p>
-              <p className="text-2xl font-bold text-blue-600">₹{loan.loanAmount.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-blue-600">₦{loan.loanAmount.toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Monthly Income</p>
-              <p className="text-2xl font-bold">₹{loan.monthlyIncome.toLocaleString()}</p>
+              <p className="text-2xl font-bold">₦{loan.monthlyIncome.toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Monthly EMI</p>
-              <p className="text-2xl font-bold text-green-600">₹{loan.monthlyEMI?.toFixed(2) || '0.00'}</p>
+              <p className="text-2xl font-bold text-green-600">₦{loan.monthlyEMI?.toLocaleString() || '0.00'}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Interest Rate</p>
@@ -75,7 +75,7 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">Total Interest</p>
-              <p className="text-2xl font-bold text-orange-600">₹{totalInterest.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-orange-600">₦{totalInterest.toLocaleString()}</p>
             </div>
           </div>
 
@@ -106,7 +106,7 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
 
           {schedule.length > 0 && (
             <div>
-              <p className="text-sm text-gray-600 font-semibold mb-4">Repayment Schedule (First 6 months)</p>
+              <p className="text-sm text-gray-600 font-semibold mb-4">Repayment Schedule</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100">
@@ -119,20 +119,20 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                     </tr>
                   </thead>
                   <tbody>
-                    {schedule.slice(0, 6).map((row: any) => (
+                    {schedule.map((row: any) => (
                       <tr key={row.step} className="border-b">
                         <td className="px-4 py-2">{row.step}</td>
-                        <td className="px-4 py-2 text-right">₹{row.emi.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right">₹{row.principal.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right">₹{row.interest.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right font-semibold">₹{row.balance.toFixed(2)}</td>
+                        <td className="px-4 py-2 text-right">₦{row.emi.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right">₦{row.principal.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right">₦{row.interest.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right font-semibold">₦{row.balance.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {schedule.length > 6 && (
-                <p className="text-xs text-gray-500 mt-2">Showing first 6 months of {schedule.length} total months</p>
+              {schedule.length > 50 && (
+                <p className="text-xs text-gray-500 mt-2">Showing full schedule of {schedule.length} months</p>
               )}
             </div>
           )}

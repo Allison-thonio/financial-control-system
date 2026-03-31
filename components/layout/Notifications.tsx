@@ -32,7 +32,7 @@ export function Notifications() {
                 const collection = loans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
                     const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
                         (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
-                    const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+                    const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings, loan.repaymentType === 'salary_advance');
                     return schedule.some(s => s.month === currentMonth && s.year === currentYear);
                 }).length;
 

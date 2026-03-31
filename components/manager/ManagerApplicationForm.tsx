@@ -101,14 +101,18 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
         const tenure = parseInt(formData.loanTenure) || 3;
         if (amount <= 0) return null;
 
-        const schedule = getDetailedRepaymentSchedule(amount, tenure, new Date(), income, settings);
+        const isSalaryOffset = formData.repaymentType === 'salary_advance';
+        const schedule = getDetailedRepaymentSchedule(amount, tenure, new Date(), income, settings, isSalaryOffset);
         const totalRepayment = schedule.reduce((sum, step) => sum + step.total, 0);
         const totalInterest = schedule.reduce((sum, step) => sum + step.interest, 0);
+
+        const dtiPercentage = income > 0 ? (totalRepayment / tenure) / income : 0;
 
         return {
             totalRepayment,
             totalInterest,
             monthlyEMI: totalRepayment / tenure,
+            dtiPercentage,
             endDate: schedule[schedule.length - 1],
             isReducing: false,
             schedule
@@ -147,7 +151,8 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
             return;
         }
 
-        const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings);
+        const isSalaryOffset = formData.repaymentType === 'salary_advance';
+        const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings, isSalaryOffset);
 
         setIsSubmitting(true);
         try {
@@ -177,14 +182,14 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
                 userName: name,
                 email: user?.email || 'Unknown',
                 loanAmount: amount,
-                loanReason: amount > income ? 'Salary Advance' : 'General Purpose',
+                loanReason: formData.repaymentType === 'salary_advance' ? 'Salary Advance / Wipe' : 'General Purpose',
                 monthlyIncome: income,
                 loanTerm: tenure,
                 interestRate: settings.interestRate * 100,
                 monthlyEMI: Math.round(totalRepayment / tenure),
                 approvalReason: 'Manager Direct Entry',
                 status: 'approved',
-                repaymentType: amount > income ? 'salary_advance' : 'default',
+                repaymentType: formData.repaymentType,
                 nin: formData.nin || undefined,
                 appointmentLetter: appointmentLetterUrl,
                 passportPhoto: passportPhotoUrl,
@@ -374,16 +379,14 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
                                         <p className="text-xs font-black uppercase text-gray-500">Manual Repayment Schedule (Projected)</p>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                        {Array.from({ length: Math.min(parseInt(formData.loanTenure) || 3, 12) }).map((_, i) => (
+                                        {loanSummary?.schedule.map((step, i) => (
                                             <div key={i} className="space-y-1">
                                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Month {i + 1}</label>
                                                 <input
                                                     type="number"
-                                                    placeholder="Auto-calc"
+                                                    value={Math.round(step.total)}
+                                                    onChange={() => {}} 
                                                     className="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
-                                                // Note: In a full custom implementation, we'd bind this to specific custom month states.
-                                                // For now, this is a visual placeholder to acknowledge the user's request for "editing".
-                                                // Real custom logic would require a complex state array.
                                                 />
                                             </div>
                                         ))}
@@ -415,18 +418,32 @@ export function ManagerApplicationForm({ onSuccess, onClose, existingLoans }: Ma
                                         </p>
                                     </div>
                                     <div>
-                                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Monthly Deduction</p>
-                                        <p className="text-xl sm:text-2xl font-black">₦{Math.round(loanSummary.monthlyEMI).toLocaleString()}</p>
+                                        <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">
+                                            {formData.repaymentType === 'salary_advance' ? 'Deduction Mode: Full Salary' : 'Deduction Mode: Fixed EMI'}
+                                        </p>
+                                        <p className="text-xl sm:text-2xl font-black">
+                                            {formData.repaymentType === 'salary_advance' 
+                                                ? `₦${income.toLocaleString()}` 
+                                                : `₦${Math.round(loanSummary.monthlyEMI).toLocaleString()}`}
+                                        </p>
+                                        <div className="flex items-center gap-1 mt-1">
+                                            <div className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${formData.repaymentType === 'salary_advance' ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'}`}>
+                                                {formData.repaymentType === 'salary_advance' ? 'Salary Wipe Mode' : 'Standard EMI Mode'}
+                                            </div>
+                                            <p className="text-[10px] text-blue-400 font-bold leading-tight">
+                                                {Math.round(loanSummary.dtiPercentage * 100)}% of Salary
+                                            </p>
+                                        </div>
                                     </div>
                                     <div>
                                         <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Spreadsheet Preview</p>
-                                        <div className="flex flex-col gap-1 mt-1">
-                                            {loanSummary.schedule.slice(0, 3).map((s, i) => (
-                                                <p key={i} className="text-[9px] text-gray-300 font-medium">Month {i + 1}: ₦{s.total.toLocaleString()}</p>
+                                        <div className="flex flex-col gap-1 mt-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+                                            {loanSummary.schedule.map((s, i) => (
+                                                <div key={i} className="flex justify-between items-center text-[9px]">
+                                                    <span className="text-gray-400">Month {i + 1}:</span>
+                                                    <span className="text-gray-100 font-bold">₦{s.total.toLocaleString()}</span>
+                                                </div>
                                             ))}
-                                            {loanSummary.schedule.length > 3 && (
-                                                <p className="text-[9px] text-gray-500 italic">...and {loanSummary.schedule.length - 3} more</p>
-                                            )}
                                         </div>
                                     </div>
                                     <div className="flex items-center">

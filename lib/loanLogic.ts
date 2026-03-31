@@ -131,40 +131,44 @@ export function getDetailedRepaymentSchedule(
   let remainingPrincipal = principal;
 
   if (isSalaryOffset && monthlySalary > 0) {
-    // Salary Offset Logic: Take full salary until the last month
-    for (let i = 1; i <= tenureMonths; i++) {
+    // Salary Wipe Logic: Take full salary until the TOTAL balance (Principal + Interest) is zero.
+    let remainingTotal = principal + totalInterest;
+    let monthIdx = 1;
+
+    while (remainingTotal > 0 && monthIdx <= tenureMonths * 2) { // Guard against infinite loop
       const dueDate = new Date(startDate);
-      dueDate.setMonth(startDate.getMonth() + i);
+      dueDate.setMonth(startDate.getMonth() + monthIdx);
 
-      let principalPaid = 0;
-      let interestPaid = 0;
+      const payment = Math.min(monthlySalary, remainingTotal);
+      
+      // Split the payment between interest and principal for accounting
+      // We prioritize interest first (Standard practice) or principal first (as requested previously)?
+      // User said "taking the whole salary... until the debt is cleared that is plus interest"
+      // Let's just calculate how much of the payment goes to interest vs principal.
+      // Since it's a flat interest, we can just deduct from the pool.
+      
+      const interestPortion = Math.min(payment, Math.max(0, totalInterest - schedule.reduce((sum, s) => sum + s.interest, 0)));
+      const principalPortion = payment - interestPortion;
 
-      if (i < tenureMonths) {
-        // Months 1 to (n-1): Pay full salary towards principal. 0 Interest.
-        principalPaid = Math.min(monthlySalary, remainingPrincipal);
-        interestPaid = 0;
-      } else {
-        // Final Month: Pay remaining principal + ALL accumulated interest.
-        principalPaid = remainingPrincipal;
-        interestPaid = totalInterest;
-      }
-
-      remainingPrincipal -= principalPaid;
+      remainingTotal -= payment;
 
       schedule.push({
         month: dueDate.getMonth(),
         year: dueDate.getFullYear(),
-        principal: Math.round(principalPaid),
-        interest: Math.round(interestPaid),
-        total: Math.round(principalPaid + interestPaid),
-        remainingBalance: Math.max(0, Math.round(remainingPrincipal))
+        principal: Math.round(principalPortion),
+        interest: Math.round(interestPortion),
+        total: Math.round(payment),
+        remainingBalance: Math.max(0, Math.round(remainingTotal))
       });
+
+      monthIdx++;
+      if (monthIdx > tenureMonths && remainingTotal <= 0) break; 
     }
   } else {
-    // Standard Flat Logic
+    // Standard Flat EMI Logic: Fixed monthly deduction
+    const monthlyTotal = (principal + totalInterest) / tenureMonths;
+    const monthlyInterest = totalInterest / tenureMonths;
     const monthlyPrincipal = principal / tenureMonths;
-    const monthlyInterest = principal * r;
-    const monthlyTotal = monthlyPrincipal + monthlyInterest;
 
     for (let i = 1; i <= tenureMonths; i++) {
       const dueDate = new Date(startDate);
@@ -179,7 +183,7 @@ export function getDetailedRepaymentSchedule(
         principal: Math.round(monthlyPrincipal),
         interest: Math.round(monthlyInterest),
         total: Math.round(monthlyTotal),
-        remainingBalance: Math.max(0, Math.round(remainingPrincipal))
+        remainingBalance: Math.max(0, Math.round(remainingPrincipal * (1 + r))) // Showing remaining total balance with interest
       });
     }
   }

@@ -156,7 +156,7 @@ export default function LoanApplicationForm({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Monthly Payment</label>
             <div className={`px-3 py-2 border rounded-lg font-medium ${isSalaryOffset ? 'bg-orange-50 border-orange-200 text-orange-800' : 'bg-gray-50 border-gray-300 text-gray-700'}`}>
-              {isSalaryOffset ? 'Variable (Salary Take)' : `₦${monthlyPayment.toFixed(2)}`}
+              {isSalaryOffset ? `₦${monthlyIncome.toLocaleString()} (Full Salary)` : `₦${monthlyPayment.toFixed(2)}`}
             </div>
           </div>
         </div>
@@ -167,8 +167,8 @@ export default function LoanApplicationForm({
             <h4 className="text-sm font-bold text-gray-900">Repayment Mode</h4>
             <p className="text-xs text-gray-500">
               {isSalaryOffset 
-                ? "Takes full salary for initial months, interest deferred to final month." 
-                : "Equal monthly installments including principal and interest."}
+                ? "Takes your entire salary each month until the total debt (principal + interest) is fully cleared." 
+                : "Standard fixed monthly installments including principal and interest."}
             </p>
           </div>
           <button

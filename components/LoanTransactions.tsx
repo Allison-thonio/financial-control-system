@@ -102,7 +102,7 @@ export function LoanTransactions() {
         const start = new Date(row.startDate);
         const currentYear = new Date().getFullYear();
 
-        const schedule = getDetailedRepaymentSchedule(row.loanAmount, row.loanTenure, start, row.monthlyIncome, settings);
+        const schedule = getDetailedRepaymentSchedule(row.loanAmount, row.loanTenure, start, row.monthlyIncome, settings, row.repaymentType as any === 'salary_advance');
 
         const scheduledPayment = schedule.find(p => p.month === monthIndex && p.year === currentYear);
 
@@ -161,7 +161,7 @@ export function LoanTransactions() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredTransactions.map((row) => {
-                                const { total } = calculateTotalRepayment(row.loanAmount, row.loanTenure, row.monthlyIncome, settings);
+                                const { total } = calculateTotalRepayment(row.loanAmount, row.loanTenure, row.monthlyIncome, settings, row.repaymentType as any === 'salary_advance');
                                 const isOverLimit = total > row.monthlyIncome * settings.salaryCapMultiplier;
 
                                 return (
@@ -325,7 +325,7 @@ export function LoanTransactions() {
                                     <div className="space-y-6">
                                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Repayment Roadmap</h3>
                                         <div className="space-y-3">
-                                            {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, new Date(selectedLoan.startDate), selectedLoan.monthlyIncome, settings).map((step, i) => (
+                                            {getDetailedRepaymentSchedule(selectedLoan.loanAmount, selectedLoan.loanTenure, new Date(selectedLoan.startDate), selectedLoan.monthlyIncome, settings, selectedLoan.repaymentType as any === 'salary_advance').map((step, i) => (
                                                 <div key={i} className="flex items-center justify-between p-4 bg-primary/[0.03] rounded-2xl border border-primary/5">
                                                     <div>
                                                         <p className="text-[9px] font-black uppercase text-primary mb-0.5">M{i + 1} • {MONTHS[step.month]}</p>

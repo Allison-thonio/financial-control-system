@@ -129,7 +129,7 @@ export function StaffDashboard() {
     return allLoans.filter(l => l.status === 'approved' || l.status === 'disbursed').filter(loan => {
       const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
         (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
-      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings, loan.repaymentType === 'salary_advance');
       return schedule.some(s => s.month === currentMonth && s.year === currentYear);
     });
   }, [allLoans, settings, currentMonth, currentYear]);
@@ -184,7 +184,7 @@ export function StaffDashboard() {
     approved.forEach(loan => {
       const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
         (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
-      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings, loan.repaymentType === 'salary_advance');
       const currentStep = schedule.find(s => s.month === currentMonth && s.year === currentYear);
       if (currentStep) {
         monthlyCollection += currentStep.total;
@@ -206,14 +206,18 @@ export function StaffDashboard() {
     const tenure = parseInt(formData.loanTenure) || 3;
     if (amount <= 0) return null;
 
-    const schedule = getDetailedRepaymentSchedule(amount, tenure, new Date(), income, settings);
+    const isSalaryOffset = formData.repaymentType === 'salary_advance';
+    const schedule = getDetailedRepaymentSchedule(amount, tenure, new Date(), income, settings, isSalaryOffset);
     const totalRepayment = schedule.reduce((sum, step) => sum + step.total, 0);
     const totalInterest = schedule.reduce((sum, step) => sum + step.interest, 0);
+
+    const dtiPercentage = income > 0 ? (totalRepayment / tenure) / income : 0;
 
     return {
       totalRepayment,
       totalInterest,
       monthlyEMI: totalRepayment / tenure,
+      dtiPercentage,
       endDate: schedule[schedule.length - 1],
       isReducing: false,
       schedule
@@ -262,7 +266,8 @@ export function StaffDashboard() {
       }
     }
 
-    const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings);
+    const isSalaryOffset = formData.repaymentType === 'salary_advance';
+    const { total: totalRepayment } = calculateTotalRepayment(amount, tenure, income, settings, isSalaryOffset);
 
     setIsSubmitting(true);
     try {
@@ -588,12 +593,13 @@ export function StaffDashboard() {
                             <p className="text-xs font-black uppercase text-gray-500">Manual Repayment Schedule (Projected)</p>
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                            {Array.from({ length: Math.min(parseInt(formData.loanTenure) || 3, 12) }).map((_, i) => (
+                            {loanSummary?.schedule.map((step, i) => (
                               <div key={i} className="space-y-1">
                                 <label className="text-[9px] font-bold text-gray-400 uppercase">Month {i + 1}</label>
                                 <input
                                   type="number"
-                                  placeholder="Auto-calc"
+                                  value={Math.round(step.total)}
+                                  onChange={() => {}} // Read-only for now as per "Auto-calc" placeholder, but showing values
                                   className="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary/20 outline-none"
                                 />
                               </div>
@@ -626,20 +632,33 @@ export function StaffDashboard() {
                               {parseFloat(formData.loanAmount) > parseFloat(formData.monthlyIncome) && ' (Salary Take Applied)'}
                             </p>
                           </div>
-                          <div>
-                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">Avg. Monthly Deduction</p>
-                            <p className="text-2xl font-black">₦{Math.round(loanSummary.monthlyEMI).toLocaleString()}</p>
-                            <p className="text-xs text-gray-400 font-bold mt-1">Starting next month</p>
-                          </div>
+                            <div>
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">
+                                {formData.repaymentType === 'salary_advance' ? 'Deduction Mode: Full Salary' : 'Deduction Mode: Fixed EMI'}
+                              </p>
+                              <p className="text-2xl font-black">
+                                {formData.repaymentType === 'salary_advance' 
+                                  ? `₦${(parseFloat(formData.monthlyIncome) || 0).toLocaleString()}` 
+                                  : `₦${Math.round(loanSummary.monthlyEMI).toLocaleString()}`}
+                              </p>
+                              <div className="flex items-center gap-1 mt-1">
+                                <div className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${formData.repaymentType === 'salary_advance' ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'}`}>
+                                  {formData.repaymentType === 'salary_advance' ? 'Salary Wipe Mode' : 'Standard EMI Mode'}
+                                </div>
+                                <p className="text-[10px] text-blue-400 font-black leading-tight">
+                                  {Math.round(loanSummary.dtiPercentage * 100)}% of Salary
+                                </p>
+                              </div>
+                            </div>
                           <div>
                             <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-1">Spreadsheet Preview</p>
-                            <div className="flex flex-col gap-1 mt-1">
-                              {loanSummary.schedule.slice(0, 4).map((s, i) => (
-                                <p key={i} className="text-[9px] text-gray-300 font-medium">Month {i + 1}: ₦{s.total.toLocaleString()}</p>
+                            <div className="flex flex-col gap-1 mt-1 max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+                              {loanSummary.schedule.map((s, i) => (
+                                <div key={i} className="flex justify-between items-center text-[9px]">
+                                  <span className="text-gray-400">Month {i + 1}:</span>
+                                  <span className="text-gray-100 font-bold">₦{s.total.toLocaleString()}</span>
+                                </div>
                               ))}
-                              {loanSummary.schedule.length > 4 && (
-                                <p className="text-[9px] text-gray-500 italic">...and {loanSummary.schedule.length - 4} more</p>
-                              )}
                             </div>
                           </div>
                           <div className="flex items-center">
@@ -923,7 +942,7 @@ export function StaffDashboard() {
                     {filteredCollection.map((loan, idx) => {
                       const createdAt = typeof loan.createdAt === 'string' ? new Date(loan.createdAt) :
                         (loan.createdAt && typeof (loan.createdAt as any).toDate === 'function' ? (loan.createdAt as any).toDate() : new Date('2024-01-01'));
-                      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings);
+                      const schedule = getDetailedRepaymentSchedule(loan.loanAmount, loan.loanTerm, createdAt, loan.monthlyIncome, settings, loan.repaymentType === 'salary_advance');
                       const thisMonthDue = schedule.find(s => s.month === currentMonth && s.year === currentYear)?.total || 0;
                       const totalWithInterest = schedule.reduce((sum, s) => sum + s.total, 0);
 
@@ -1019,7 +1038,7 @@ export function StaffDashboard() {
                     <div className="p-6 bg-primary/5 rounded-[2rem] border border-primary/10">
                       <p className="text-[10px] text-primary font-black uppercase mb-2">Total Carry Amount</p>
                       <p className="text-3xl font-black text-gray-900">
-                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings).reduce((sum, s) => sum + s.total, 0).toLocaleString()}
+                        ₦{getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings, selectedLoanForDetails.repaymentType === 'salary_advance').reduce((sum, s) => sum + s.total, 0).toLocaleString()}
                       </p>
                       <p className="text-xs text-emerald-600 font-bold mt-1 leading-tight">Status: {['approved', 'disbursed'].includes(selectedLoanForDetails.status) ? 'Still Paying' : 'Pending Verification'}</p>
                     </div>
@@ -1105,7 +1124,7 @@ export function StaffDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings).map((step, i) => (
+                          {getDetailedRepaymentSchedule(selectedLoanForDetails.loanAmount, selectedLoanForDetails.loanTerm, typeof selectedLoanForDetails.createdAt === 'string' ? new Date(selectedLoanForDetails.createdAt) : (selectedLoanForDetails.createdAt && typeof (selectedLoanForDetails.createdAt as any).toDate === 'function' ? (selectedLoanForDetails.createdAt as any).toDate() : new Date('2024-01-01')), selectedLoanForDetails.monthlyIncome, settings, selectedLoanForDetails.repaymentType === 'salary_advance').map((step, i) => (
                             <tr key={i} className="hover:bg-white transition-colors">
                               <td className="px-6 py-4 text-gray-400 font-black">{i + 1}</td>
                               <td className="px-6 py-4 font-medium">{new Date(step.year, step.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
